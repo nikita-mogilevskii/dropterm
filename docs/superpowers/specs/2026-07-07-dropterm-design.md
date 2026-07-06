@@ -12,25 +12,37 @@ click away, the panel closes but the shell session keeps running.
 ## Requirements
 
 1. Menu bar item: SF Symbol `terminal` icon only (no text).
-2. Clicking opens a **fixed 700×420** dropdown panel (MenuBarExtra
-   `.window` style) filled by a terminal emulator.
-3. Terminal is a **real pty** running the user's **login shell**
+2. Clicking opens a dropdown panel (MenuBarExtra `.window` style)
+   filled by a terminal emulator. Default size **700×420**.
+3. **Resizable by dragging the bottom-right corner** (custom drag
+   handle). Size clamped 480×300 … 1200×800, persisted in
+   `UserDefaults` (`@AppStorage`), restored across panel opens AND app
+   restarts. The pty winsize follows the view (SwiftTerm handles
+   resize on layout).
+4. Terminal is a **real pty** running the user's **login shell**
    (`$SHELL -l`, fallback `/bin/zsh -l`), cwd `$HOME`,
    `TERM=xterm-256color`.
-4. **One persistent session**: created lazily on first panel open;
+5. **One persistent session**: created lazily on first panel open;
    closing/reopening the panel re-hosts the SAME live session (running
-   jobs, cwd, scrollback intact). Session dies only on app quit or
-   shell exit.
-5. Shell exit (or spawn failure) → dim overlay over the terminal:
-   "Session ended" + **Restart** button (spawns a fresh login shell).
-6. Footer: Launch at login checkbox (`SMAppService.mainApp`), Restart
-   button, Quit button.
-7. Keyboard input lands in the terminal immediately on panel open
+   jobs, cwd, scrollback intact).
+6. **Shell exit = reset.** When the shell exits (`exit`, Ctrl+D, kill
+   — note: Ctrl+C only interrupts the foreground job, it does not exit
+   the shell), a fresh login shell auto-spawns with a **crossfade
+   animation**: old terminal fades out, new one fades in (~0.35s
+   easeInOut total). No dead-session overlay in the normal path.
+7. **Spawn failure only** → dim overlay: "Couldn't start shell" +
+   **Retry** button. Never crash.
+8. Footer: Launch at login checkbox (`SMAppService.mainApp`), Restart
+   button (force reset: kills current shell → same crossfade), Quit.
+9. Keyboard input lands in the terminal immediately on panel open
    (first responder on appear).
-8. Menu bar only: `LSUIElement = true`, no Dock icon.
-9. Native **Liquid Glass** chrome (macOS 26 APIs) around the terminal;
-   terminal area itself is a standard dark emulator surface.
-10. Panel dismisses on outside click (standard MenuBarExtra behavior)
+10. Menu bar only: `LSUIElement = true`, no Dock icon.
+11. Chrome: the dropdown panel is **standard macOS 26 material** (the
+    system's window/glass appearance); inside it sits the terminal as
+    a **black, rounded-corner** surface (corner radius matching the
+    panel's curvature, inset padding) — dark terminal card on native
+    glass.
+12. Panel dismisses on outside click (standard MenuBarExtra behavior)
     — acceptable because the session persists.
 
 ## Stack & constraints
@@ -59,74 +71,99 @@ click away, the panel closes but the shell session keeps running.
 ```
 DropTermApp (@main, MenuBarExtra .window, Image(systemName: "terminal"))
  ├── TerminalSession   (ObservableObject; app-lifetime singleton owned by App)
- │     - owns the ONE LocalProcessTerminalView + pty/process lifecycle
- │     - state: .idle | .running | .exited(code: Int32?)
+ │     - owns the CURRENT LocalProcessTerminalView + pty/process lifecycle
+ │     - state: .idle | .running | .failed(String)
+ │     - generation: Int (increments per spawn — drives the crossfade)
  │     - start(): spawns $SHELL -l in $HOME with TERM=xterm-256color
- │     - restart(): tears down old view/process, spawns fresh
- │     - LocalProcessTerminalViewDelegate.processTerminated → .exited
+ │     - restart(): kills current process (if any), spawns fresh, generation += 1
+ │     - LocalProcessTerminalViewDelegate.processTerminated → auto restart()
+ │       (normal path: shell exit = reset)
+ │     - spawn failure → .failed(message), no auto-retry loop
  ├── TerminalHostView  (NSViewRepresentable)
- │     - returns session's existing NSView every time (no re-creation)
+ │     - returns session's CURRENT NSView (keyed by generation)
  │     - makeFirstResponder on appear
- └── PanelView (700×420)
-       ├── TerminalHostView (fills)
-       ├── if .exited → overlay: "Session ended" + Restart (.glassProminent)
-       │     (spawn failure also lands in .exited(code: nil))
-       └── footer: Launch at login · Restart · Quit
+ └── PanelView (size from PanelSizeStore, default 700×420)
+       ├── terminal card: black background, rounded corners (radius ≈
+       │   panel curvature), inset from panel edges — hosted on standard
+       │   macOS 26 material chrome
+       ├── crossfade: terminal card content is .id(session.generation)
+       │   with .transition(.opacity) inside withAnimation(.easeInOut)
+       │   — old fades out, fresh shell fades in on every reset
+       ├── if .failed → dim overlay: "Couldn't start shell" + Retry
+       ├── footer: Launch at login · Restart · Quit
+       └── resize handle (bottom-right): DragGesture updates
+           PanelSizeStore live; panel .frame follows
+ └── PanelSizeStore (ObservableObject)
+       - width/height, clamped 480×300…1200×800
+       - persisted via UserDefaults key "panelSize.v1", loaded at init
 ```
 
-**The critical invariant:** the pty and its NSView live in
+**Critical invariant #1:** the pty and its NSView live in
 `TerminalSession`, NEVER in SwiftUI view state. MenuBarExtra recreates
 its content view hierarchy on every open; the representable must
 re-host the same NSView or the session dies with the panel.
+
+**Critical invariant #2:** auto-restart must not loop. Restart on
+`processTerminated` only when the previous state was `.running`; a
+spawn that fails lands in `.failed` and waits for explicit Retry.
 
 `LoginItem` wrapper reused from the Cadence pattern (SMAppService,
 log-don't-alert).
 
 ## Data flow
 
-- No persistence of terminal state (scrollback lives in the emulator
-  view for the app's lifetime; gone on quit — intended).
-- Only persisted setting: launch-at-login (owned by SMAppService itself).
-- No UserDefaults schema in v1.
+- Terminal scrollback lives in the emulator view for the session's
+  lifetime; cleared on reset, gone on quit — intended.
+- Persisted: panel size (`panelSize.v1` in UserDefaults),
+  launch-at-login (owned by SMAppService itself).
 
 ## Error handling
 
-- Shell spawn failure → `.exited` overlay (message + Restart). Never
-  crash.
-- Process exit for any reason (exit, kill, crash) → same overlay.
+- Shell spawn failure → `.failed` overlay (message + Retry). Never
+  crash. No auto-retry (prevents spawn-crash loops).
+- Shell exit for any reason while `.running` → auto-reset with
+  crossfade (the feature, not an error).
 - `SMAppService` registration failure → checkbox reverts, NSLog only.
+- Resize: values clamped at the store boundary; garbage in
+  UserDefaults → default 700×420.
 
 ## Testing
 
-SwiftTerm's emulation is upstream's concern. Ours is the session state
-machine. `TerminalSession` isolates process operations behind an
-injectable factory so tests drive transitions without real ptys:
+SwiftTerm's emulation is upstream's concern. Ours: session state
+machine + size store. `TerminalSession` isolates process operations
+behind an injectable factory so tests drive transitions without real
+ptys:
 
-- idle → running on start
-- running → exited on processTerminated
-- exited → running on restart (old resources torn down)
-- restart from running replaces the session
-- spawn failure → exited(nil)
+- idle → running on start; generation increments
+- running + processTerminated → auto-restart: running again,
+  generation incremented (crossfade trigger observable)
+- spawn failure → .failed, NO auto-retry on subsequent terminations
+- explicit restart() from running kills old, spawns new
+- PanelSizeStore: clamping both bounds, persistence roundtrip,
+  corrupt/missing defaults → 700×420
 
 Suite runs via `swift run DropTermTests` (executable Swift Testing
 host, same as Cadence).
 
 Manual smoke: build bundle, launch, type commands, close/reopen panel
-(session persists), `exit` → overlay → Restart, launch-at-login
-checkbox, Quit.
+(session persists), Ctrl+D → crossfade into fresh shell, Restart
+button same, resize via corner drag → quit → relaunch → size
+remembered, launch-at-login checkbox, Quit.
 
 ## Out of scope (YAGNI, possible v2)
 
-tmux session sharing, resizable panel, tabs/splits, theming
-preferences, global hotkey, scrollback persistence across app
-restarts, GitHub publishing (on request).
+tmux session sharing, tabs/splits, theming preferences, global
+hotkey, scrollback persistence across app restarts, GitHub publishing
+(on request).
 
 ## Decisions log
 
 | Decision | Choice | Why |
 |---|---|---|
 | Session model | Persistent own shell | zero deps, survives reopen; tmux = v2 |
-| Panel | Fixed 700×420 | MenuBarExtra resizes poorly; solid v1 |
+| Reset | Shell exit auto-respawns + crossfade | exit/Ctrl+D as the reset gesture; no dead-end overlay |
+| Panel | Resizable via corner drag, size persisted | user request; custom handle, not window-manager resize |
+| Chrome | Standard macOS 26 material outside, black rounded terminal card inside | user request |
 | Bar | Icon only, standard dismiss | session persists, nothing lost |
 | Name | DropTerm | says what it does |
 | Terminal engine | SwiftTerm | mature, LocalProcessTerminalView does pty+emulation |
