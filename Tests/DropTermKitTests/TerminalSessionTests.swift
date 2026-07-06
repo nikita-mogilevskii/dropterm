@@ -1,0 +1,112 @@
+import AppKit
+import Testing
+@testable import DropTermKit
+
+@Suite("TerminalSession", .serialized)
+struct TerminalSessionTests {
+
+    final class FakeSurface: TerminalSurface {
+        let view = NSView()
+        var currentDirectory: String? = nil
+        var terminated = false
+        func terminateProcess() { terminated = true }
+    }
+
+    final class FakeFactory: TerminalSurfaceFactory {
+        struct Boom: Error, LocalizedError { var errorDescription: String? { "boom" } }
+        var spawnCount = 0
+        var failNext = false
+        var surfaces: [FakeSurface] = []
+        var exitHandlers: [(Int32?) -> Void] = []
+
+        func makeSurface(command: ResolvedCommand, directory: String,
+                         onProcessExit: @escaping (Int32?) -> Void) throws -> TerminalSurface {
+            spawnCount += 1
+            if failNext { failNext = false; throw Boom() }
+            exitHandlers.append(onProcessExit)
+            let s = FakeSurface()
+            surfaces.append(s)
+            return s
+        }
+    }
+
+    /// hop: { $0() } makes exit callbacks synchronous for determinism.
+    func makeSession(_ factory: FakeFactory) -> TerminalSession {
+        TerminalSession(factory: factory,
+                        resolved: (.plain(shell: "/bin/zsh"),
+                                   ResolvedCommand(exec: "/bin/zsh", args: ["-l"])),
+                        hop: { $0() })
+    }
+
+    @Test func startSpawnsOnceAndIsIdempotent() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        #expect(s.state == .idle)
+        s.startIfNeeded()
+        s.startIfNeeded()
+        #expect(f.spawnCount == 1)
+        #expect(s.state == .running)
+        #expect(s.generation == 1)
+        #expect(s.currentView === f.surfaces[0].view)
+    }
+
+    @Test func processExitAutoRestartsWithNewGeneration() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.startIfNeeded()
+        f.exitHandlers[0](0)                    // shell exited
+        #expect(f.spawnCount == 2)              // auto-respawn
+        #expect(s.state == .running)
+        #expect(s.generation == 2)              // crossfade trigger
+    }
+
+    @Test func spawnFailureParksInFailedWithoutRetryLoop() {
+        let f = FakeFactory()
+        f.failNext = true
+        let s = makeSession(f)
+        s.startIfNeeded()
+        #expect(s.state == .failed("boom"))
+        #expect(f.spawnCount == 1)              // no auto-retry
+        #expect(s.currentView == nil)
+    }
+
+    @Test func retryFromFailedSpawns() {
+        let f = FakeFactory()
+        f.failNext = true
+        let s = makeSession(f)
+        s.startIfNeeded()
+        s.retry()
+        #expect(s.state == .running)
+        #expect(f.spawnCount == 2)
+    }
+
+    @Test func retryWhileRunningIsIgnored() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.startIfNeeded()
+        s.retry()
+        #expect(f.spawnCount == 1)
+    }
+
+    @Test func restartTerminatesOldAndSpawnsNew() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.startIfNeeded()
+        s.restart()
+        #expect(f.surfaces[0].terminated == true)
+        #expect(f.spawnCount == 2)
+        #expect(s.generation == 2)
+        #expect(s.currentView === f.surfaces[1].view)
+    }
+
+    @Test func staleExitFromReplacedSurfaceIsIgnored() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.startIfNeeded()
+        let oldExit = f.exitHandlers[0]
+        s.restart()                              // surface #2 now live
+        oldExit(137)                             // late exit from the killed #1
+        #expect(f.spawnCount == 2)               // must NOT trigger respawn #3
+        #expect(s.generation == 2)
+    }
+}
