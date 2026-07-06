@@ -32,7 +32,9 @@ public enum ITermJump {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: tmuxPath)
         p.arguments = ["detach-client", "-s", SessionCommand.tmuxSessionName]
-        try? p.run()
+        // waitUntilExit on an unlaunched Process raises an ObjC exception —
+        // only wait if the launch actually succeeded.
+        guard (try? p.run()) != nil else { return }
         p.waitUntilExit()
     }
 

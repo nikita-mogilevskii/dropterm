@@ -38,7 +38,17 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
         p.standardOutput = pipe
         p.standardError = Pipe()
         guard (try? p.run()) != nil else { return nil }
-        p.waitUntilExit()
+        // Bound the wait: this can run on the main thread (jump button), and
+        // a hung lsof must not freeze the app.
+        let sem = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            p.waitUntilExit()
+            sem.signal()
+        }
+        if sem.wait(timeout: .now() + .milliseconds(500)) == .timedOut {
+            p.terminate()
+            return nil
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let out = String(data: data, encoding: .utf8) else { return nil }
         // Output lines: "p<pid>", "fcwd", "n/actual/path"
