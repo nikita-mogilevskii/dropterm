@@ -19,30 +19,49 @@ click away, the panel closes but the shell session keeps running.
    `UserDefaults` (`@AppStorage`), restored across panel opens AND app
    restarts. The pty winsize follows the view (SwiftTerm handles
    resize on layout).
-4. Terminal is a **real pty** running the user's **login shell**
-   (`$SHELL -l`, fallback `/bin/zsh -l`), cwd `$HOME`,
-   `TERM=xterm-256color`.
+4. Terminal is a **real pty**. Session command is resolved at spawn:
+   - **tmux mode** (tmux binary found): `tmux new-session -A -s dropterm`
+     — attach-or-create the named session. The session lives in the
+     tmux server, so it survives DropTerm quits/relaunches too.
+   - **plain mode** (no tmux): user's login shell (`$SHELL -l`,
+     fallback `/bin/zsh -l`).
+   Both: cwd `$HOME`, `TERM=xterm-256color`.
 5. **One persistent session**: created lazily on first panel open;
    closing/reopening the panel re-hosts the SAME live session (running
    jobs, cwd, scrollback intact).
-6. **Shell exit = reset.** When the shell exits (`exit`, Ctrl+D, kill
-   — note: Ctrl+C only interrupts the foreground job, it does not exit
-   the shell), a fresh login shell auto-spawns with a **crossfade
+6. **Jump to iTerm2** footer button (visible only when iTerm2 is
+   installed):
+   - tmux mode: detach DropTerm's client, then AppleScript iTerm2 to
+     open a window running `tmux attach -t dropterm` — true session
+     transfer (same jobs, scrollback, cwd). Reopening the DropTerm
+     panel re-attaches; if both stay attached, tmux `window-size
+     latest` keeps sizing sane.
+   - plain mode fallback: open a new iTerm2 window `cd`'d to the
+     DropTerm shell's current directory (jobs stay behind).
+   - First use triggers the macOS automation permission prompt
+     ("DropTerm wants to control iTerm2") — expected, once.
+7. **Client exit = reset.** When the hosted process exits (`exit`,
+   Ctrl+D, kill — note: Ctrl+C only interrupts the foreground job, it
+   does not exit the shell), a fresh spawn happens with a **crossfade
    animation**: old terminal fades out, new one fades in (~0.35s
    easeInOut total). No dead-session overlay in the normal path.
-7. **Spawn failure only** → dim overlay: "Couldn't start shell" +
+   tmux nuance: ending the shell inside tmux kills the tmux session →
+   respawn creates a fresh one; a mere detach re-attaches to the
+   living session (crossfade into the same content — fine).
+8. **Spawn failure only** → dim overlay: "Couldn't start shell" +
    **Retry** button. Never crash.
-8. Footer: Launch at login checkbox (`SMAppService.mainApp`), Restart
-   button (force reset: kills current shell → same crossfade), Quit.
-9. Keyboard input lands in the terminal immediately on panel open
-   (first responder on appear).
-10. Menu bar only: `LSUIElement = true`, no Dock icon.
-11. Chrome: the dropdown panel is **standard macOS 26 material** (the
+9. Footer: Launch at login checkbox (`SMAppService.mainApp`),
+   Jump to iTerm2 (req. 6), Restart button (force reset: kills current
+   client → same crossfade), Quit.
+10. Keyboard input lands in the terminal immediately on panel open
+    (first responder on appear).
+11. Menu bar only: `LSUIElement = true`, no Dock icon.
+12. Chrome: the dropdown panel is **standard macOS 26 material** (the
     system's window/glass appearance); inside it sits the terminal as
     a **black, rounded-corner** surface (corner radius matching the
     panel's curvature, inset padding) — dark terminal card on native
     glass.
-12. Panel dismisses on outside click (standard MenuBarExtra behavior)
+13. Panel dismisses on outside click (standard MenuBarExtra behavior)
     — acceptable because the session persists.
 
 ## Stack & constraints
@@ -50,7 +69,9 @@ click away, the panel closes but the shell session keeps running.
 | Piece | Choice |
 |---|---|
 | UI | SwiftUI, `MenuBarExtra` `.window` style |
-| Terminal | **SwiftTerm** (`LocalProcessTerminalView`) — the only external dependency |
+| Terminal | **SwiftTerm** (`LocalProcessTerminalView`) — the only external build dependency |
+| Session backing | **tmux when present** (optional runtime dep; plain login shell otherwise) |
+| iTerm2 jump | AppleScript via `osascript`/NSAppleScript; button hidden if iTerm2 absent |
 | Target | macOS 26 (Tahoe) minimum |
 | Glass | `.glassEffect()` / `.buttonStyle(.glass)` / `.glassProminent` |
 | App type | `LSUIElement = true` |
@@ -70,15 +91,27 @@ click away, the panel closes but the shell session keeps running.
 
 ```
 DropTermApp (@main, MenuBarExtra .window, Image(systemName: "terminal"))
+ ├── SessionCommand    (pure resolver, injectable for tests)
+ │     - findTmux(): first existing of /opt/homebrew/bin/tmux,
+ │       /usr/local/bin/tmux, /usr/bin/tmux → mode
+ │     - .tmux(path)  → exec: path, args: ["new-session","-A","-s","dropterm"]
+ │     - .plain(shell) → exec: $SHELL (fallback /bin/zsh), args: ["-l"]
  ├── TerminalSession   (ObservableObject; app-lifetime singleton owned by App)
  │     - owns the CURRENT LocalProcessTerminalView + pty/process lifecycle
- │     - state: .idle | .running | .failed(String)
+ │     - state: .idle | .running | .failed(String); mode: .tmux | .plain
  │     - generation: Int (increments per spawn — drives the crossfade)
- │     - start(): spawns $SHELL -l in $HOME with TERM=xterm-256color
+ │     - start(): spawns SessionCommand result in $HOME, TERM=xterm-256color
  │     - restart(): kills current process (if any), spawns fresh, generation += 1
  │     - LocalProcessTerminalViewDelegate.processTerminated → auto restart()
- │       (normal path: shell exit = reset)
+ │       (normal path: client exit = reset; tmux detach = re-attach)
  │     - spawn failure → .failed(message), no auto-retry loop
+ ├── ITermJump         (footer action; enabled iff iTerm2 installed —
+ │     NSWorkspace lookup of bundle id com.googlecode.iterm2)
+ │     - tmux mode: send detach to our client, then AppleScript iTerm2:
+ │       create window running "tmux attach -t dropterm", activate
+ │     - plain mode: read shell cwd (lsof -a -p <pid> -d cwd), AppleScript
+ │       iTerm2: new window, "cd <cwd>"
+ │     - script strings built by a pure, unit-testable builder
  ├── TerminalHostView  (NSViewRepresentable)
  │     - returns session's CURRENT NSView (keyed by generation)
  │     - makeFirstResponder on appear
@@ -126,6 +159,9 @@ log-don't-alert).
 - `SMAppService` registration failure → checkbox reverts, NSLog only.
 - Resize: values clamped at the store boundary; garbage in
   UserDefaults → default 700×420.
+- Jump failures (AppleScript error, automation permission denied,
+  iTerm2 vanished): NSLog + transient inline message near the button;
+  session untouched. Never crash.
 
 ## Testing
 
@@ -139,6 +175,11 @@ ptys:
   generation incremented (crossfade trigger observable)
 - spawn failure → .failed, NO auto-retry on subsequent terminations
 - explicit restart() from running kills old, spawns new
+- SessionCommand: tmux found → tmux argv; not found → $SHELL -l argv;
+  no $SHELL → /bin/zsh -l
+- ITermJump script builder: tmux mode emits attach command; plain mode
+  emits cd command with the provided cwd; cwd with spaces/quotes is
+  escaped correctly
 - PanelSizeStore: clamping both bounds, persistence roundtrip,
   corrupt/missing defaults → 700×420
 
@@ -152,15 +193,16 @@ remembered, launch-at-login checkbox, Quit.
 
 ## Out of scope (YAGNI, possible v2)
 
-tmux session sharing, tabs/splits, theming preferences, global
-hotkey, scrollback persistence across app restarts, GitHub publishing
-(on request).
+Tabs/splits, theming preferences, global hotkey, scrollback
+persistence in plain mode, multiple named tmux sessions, GitHub
+publishing (on request).
 
 ## Decisions log
 
 | Decision | Choice | Why |
 |---|---|---|
-| Session model | Persistent own shell | zero deps, survives reopen; tmux = v2 |
+| Session model | tmux-backed when available, plain shell otherwise | enables true iTerm2 handoff; survives app quits in tmux mode |
+| iTerm2 jump | Detach + AppleScript attach (tmux) / cwd-only (plain) | pty cannot cross processes; tmux is the only true transfer |
 | Reset | Shell exit auto-respawns + crossfade | exit/Ctrl+D as the reset gesture; no dead-end overlay |
 | Panel | Resizable via corner drag, size persisted | user request; custom handle, not window-manager resize |
 | Chrome | Standard macOS 26 material outside, black rounded terminal card inside | user request |
