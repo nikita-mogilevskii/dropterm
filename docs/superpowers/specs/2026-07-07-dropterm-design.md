@@ -47,10 +47,15 @@ Smoke feedback drove these changes:
    status item (fallback main screen), its top edge at Spotlight height
    (top edge at 75% of the visible frame, AppKit coords). Applies to
    click-open, hotkey-open, and every resize: the anchor is TOP-CENTER
-   — width grows symmetrically around the center line, height grows
-   downward. Because the center is pinned, the resize drag applies 2×
-   the horizontal mouse delta so the right edge keeps tracking the
-   cursor.
+   — width grows symmetrically around the center line. Because the
+   center is pinned, the resize drag applies 2× the horizontal mouse
+   delta so the right edge keeps tracking the cursor.
+10. **Fixed height (supersedes height resizing/persistence)**: panel
+    height is ALWAYS 50% of the current screen's visible height,
+    computed at open/resize time — never user-adjustable, never
+    persisted. The corner drag adjusts WIDTH only (still 2× delta,
+    center-pinned, clamped 480…1200, persisted). PanelSizeStore stores
+    width alone.
 
 ## What
 
