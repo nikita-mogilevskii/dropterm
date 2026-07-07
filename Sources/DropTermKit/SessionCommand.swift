@@ -40,4 +40,17 @@ public enum SessionCommand {
         return (.plain(shell: loginShell),
                 ResolvedCommand(exec: loginShell, args: ["-l"]))
     }
+
+    /// Settings-aware resolution: a custom command bypasses tmux/login
+    /// resolution entirely and runs the given binary with no args.
+    public static func resolve(
+        settings: TerminalSettings,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        shell: String? = ProcessInfo.processInfo.environment["SHELL"]
+    ) -> (mode: SessionMode, command: ResolvedCommand) {
+        if case .custom(let path) = settings.shellMode {
+            return (.plain(shell: path), ResolvedCommand(exec: path, args: []))
+        }
+        return resolve(fileExists: fileExists, shell: shell)
+    }
 }
