@@ -79,7 +79,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
                 .environmentObject(sizeStore))
 
         // Panel frame follows the size store (resize handle writes there);
-        // keep the top-right corner anchored.
+        // re-derive the Spotlight-style frame so resizing stays centered.
         sizeObservation = sizeStore.$size.sink { [weak self] newSize in
             self?.applyPanelSize(newSize)
         }
@@ -87,8 +87,9 @@ final class StatusController: NSObject, NSApplicationDelegate {
 
     private func applyPanelSize(_ size: CGSize) {
         guard let panel else { return }
-        let old = panel.frame
-        panel.setFrame(ResizeMath.topRightAnchored(oldFrame: old, newSize: size), display: true)
+        let screen = panel.screen ?? NSScreen.main
+        guard let screen else { return }
+        panel.setFrame(ResizeMath.spotlightFrame(size: size, screenFrame: screen.visibleFrame), display: true)
     }
 
     private func togglePanel() {
@@ -96,7 +97,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
     }
 
     private func showPanel() {
-        positionUnderStatusItem()
+        positionSpotlightStyle()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         session.startIfNeeded()
@@ -108,23 +109,16 @@ final class StatusController: NSObject, NSApplicationDelegate {
         removeClickOutsideMonitor()
     }
 
-    private func positionUnderStatusItem() {
-        let size = sizeStore.size
-        if let buttonWindow = statusItem.button?.window {
-            let anchor = buttonWindow.frame
-            let x = anchor.maxX - size.width
-            let y = anchor.minY - size.height - 4
-            panel.setFrame(NSRect(x: x, y: y, width: size.width, height: size.height),
-                           display: true)
-        } else {
-            // Hotkey with no resolvable item position: center-top of main screen.
-            guard let screen = NSScreen.main else { return }
-            let f = screen.visibleFrame
-            panel.setFrame(NSRect(x: f.midX - size.width / 2,
-                                  y: f.maxY - size.height - 8,
-                                  width: size.width, height: size.height),
-                           display: true)
-        }
+    /// Spotlight-style positioning (v1.1 amendment 9, supersedes the old
+    /// under-status-item anchor): always horizontally centered on the
+    /// screen hosting the status item (fallback main screen), top edge at
+    /// 75% of the visible height. Click-open and hotkey-open share this
+    /// single path.
+    private func positionSpotlightStyle() {
+        let screen = statusItem.button?.window?.screen ?? NSScreen.main
+        guard let screen else { return }
+        panel.setFrame(ResizeMath.spotlightFrame(size: sizeStore.size, screenFrame: screen.visibleFrame),
+                       display: true)
     }
 
     private func installClickOutsideMonitor() {

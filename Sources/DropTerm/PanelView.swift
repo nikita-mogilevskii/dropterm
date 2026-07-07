@@ -60,7 +60,8 @@ struct FailedOverlay: View {
 /// SwiftUI gesture translation breaks when macOS shifts the panel away
 /// from a screen edge mid-drag (v1 bug: size inverted/exploded at the
 /// right screen edge). AppKit y-origin is bottom-left, so height delta
-/// is flipped.
+/// is flipped. The panel's horizontal center is pinned (Spotlight-style
+/// positioning), so width tracks 2x the horizontal mouse delta.
 struct ResizeHandle: View {
     @EnvironmentObject private var sizeStore: PanelSizeStore
     @State private var dragStart: (mouse: NSPoint, size: CGSize)?
@@ -75,7 +76,7 @@ struct ResizeHandle: View {
                         let mouse = NSEvent.mouseLocation
                         let start = dragStart ?? (mouse, sizeStore.size)
                         if dragStart == nil { dragStart = start }
-                        sizeStore.set(ResizeMath.resized(start: start.size, mouseStart: start.mouse, mouseNow: mouse))
+                        sizeStore.set(ResizeMath.centerPinnedResized(start: start.size, mouseStart: start.mouse, mouseNow: mouse))
                     }
                     .onEnded { _ in dragStart = nil }
             )

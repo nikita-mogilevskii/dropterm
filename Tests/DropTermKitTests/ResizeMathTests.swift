@@ -5,34 +5,40 @@ import Testing
 @Suite("ResizeMath")
 struct ResizeMathTests {
 
-    @Test func draggingRightGrowsWidth() {
-        let s = ResizeMath.resized(start: CGSize(width: 700, height: 420),
-                                   mouseStart: CGPoint(x: 100, y: 500),
-                                   mouseNow: CGPoint(x: 160, y: 500))
-        #expect(s == CGSize(width: 760, height: 420))
+    @Test func draggingRightGrowsWidthDoubled() {
+        let s = ResizeMath.centerPinnedResized(start: CGSize(width: 700, height: 420),
+                                               mouseStart: CGPoint(x: 100, y: 500),
+                                               mouseNow: CGPoint(x: 160, y: 500))
+        #expect(s == CGSize(width: 820, height: 420))
     }
 
     @Test func draggingDownGrowsHeight() {
-        // Screen coords are bottom-left origin: down = y decreasing.
-        let s = ResizeMath.resized(start: CGSize(width: 700, height: 420),
-                                   mouseStart: CGPoint(x: 100, y: 500),
-                                   mouseNow: CGPoint(x: 100, y: 440))
+        let s = ResizeMath.centerPinnedResized(start: CGSize(width: 700, height: 420),
+                                               mouseStart: CGPoint(x: 100, y: 500),
+                                               mouseNow: CGPoint(x: 100, y: 440))
         #expect(s == CGSize(width: 700, height: 480))
     }
 
     @Test func draggingUpLeftShrinksBoth() {
-        let s = ResizeMath.resized(start: CGSize(width: 700, height: 420),
-                                   mouseStart: CGPoint(x: 100, y: 500),
-                                   mouseNow: CGPoint(x: 60, y: 550))
+        let s = ResizeMath.centerPinnedResized(start: CGSize(width: 700, height: 420),
+                                               mouseStart: CGPoint(x: 100, y: 500),
+                                               mouseNow: CGPoint(x: 80, y: 550))
         #expect(s == CGSize(width: 660, height: 370))
     }
 
-    @Test func topRightStaysPinnedWhenGrowing() {
-        let f = ResizeMath.topRightAnchored(oldFrame: CGRect(x: 500, y: 300, width: 700, height: 420),
-                                            newSize: CGSize(width: 800, height: 500))
-        #expect(f == CGRect(x: 400, y: 220, width: 800, height: 500))
-        // top-right corner: (maxX, maxY) unchanged
-        #expect(f.maxX == 1200)
-        #expect(f.maxY == 720)
+    @Test func spotlightFrameCentersHorizontallyAtSpotlightHeight() {
+        let f = ResizeMath.spotlightFrame(size: CGSize(width: 700, height: 420),
+                                          screenFrame: CGRect(x: 0, y: 0, width: 2000, height: 1200))
+        #expect(f.midX == 1000)                 // horizontal center
+        #expect(f.maxY == 900)                  // top at 75% of height
+        #expect(f.size == CGSize(width: 700, height: 420))
+    }
+
+    @Test func spotlightFrameRespectsScreenOrigin() {
+        // secondary display with offset origin
+        let f = ResizeMath.spotlightFrame(size: CGSize(width: 600, height: 400),
+                                          screenFrame: CGRect(x: 1000, y: 500, width: 1000, height: 800))
+        #expect(f.midX == 1500)
+        #expect(f.maxY == 1100)                 // 500 + 800*0.75
     }
 }
