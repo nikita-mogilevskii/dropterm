@@ -64,7 +64,9 @@ final class StatusController: NSObject, NSApplicationDelegate {
     // MARK: Panel
 
     private func buildPanel() {
-        panel = KeyablePanel(contentRect: NSRect(origin: .zero, size: sizeStore.size),
+        let initialFrame = ResizeMath.spotlightFrame(width: sizeStore.width,
+                                                      screenFrame: NSScreen.main?.visibleFrame ?? .init(x: 0, y: 0, width: 1440, height: 900))
+        panel = KeyablePanel(contentRect: initialFrame,
                              styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: true)
         panel.level = .statusBar
@@ -80,16 +82,16 @@ final class StatusController: NSObject, NSApplicationDelegate {
 
         // Panel frame follows the size store (resize handle writes there);
         // re-derive the Spotlight-style frame so resizing stays centered.
-        sizeObservation = sizeStore.$size.sink { [weak self] newSize in
-            self?.applyPanelSize(newSize)
+        sizeObservation = sizeStore.$width.sink { [weak self] newWidth in
+            self?.applyPanelWidth(newWidth)
         }
     }
 
-    private func applyPanelSize(_ size: CGSize) {
+    private func applyPanelWidth(_ width: CGFloat) {
         guard let panel else { return }
         let screen = panel.screen ?? NSScreen.main
         guard let screen else { return }
-        panel.setFrame(ResizeMath.spotlightFrame(size: size, screenFrame: screen.visibleFrame), display: true)
+        panel.setFrame(ResizeMath.spotlightFrame(width: width, screenFrame: screen.visibleFrame), display: true)
     }
 
     private func togglePanel() {
@@ -117,7 +119,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
     private func positionSpotlightStyle() {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main
         guard let screen else { return }
-        panel.setFrame(ResizeMath.spotlightFrame(size: sizeStore.size, screenFrame: screen.visibleFrame),
+        panel.setFrame(ResizeMath.spotlightFrame(width: sizeStore.width, screenFrame: screen.visibleFrame),
                        display: true)
     }
 

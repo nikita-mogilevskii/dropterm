@@ -8,7 +8,7 @@ struct PanelView: View {
     var body: some View {
         terminalCard
             .padding(10)
-            .frame(width: sizeStore.size.width, height: sizeStore.size.height)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottomTrailing) { ResizeHandle() }
             .onAppear { session.startIfNeeded() }
     }
@@ -64,7 +64,7 @@ struct FailedOverlay: View {
 /// positioning), so width tracks 2x the horizontal mouse delta.
 struct ResizeHandle: View {
     @EnvironmentObject private var sizeStore: PanelSizeStore
-    @State private var dragStart: (mouse: NSPoint, size: CGSize)?
+    @State private var dragStart: (mouseX: CGFloat, width: CGFloat)?
 
     var body: some View {
         Color.clear
@@ -73,10 +73,10 @@ struct ResizeHandle: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
-                        let mouse = NSEvent.mouseLocation
-                        let start = dragStart ?? (mouse, sizeStore.size)
+                        let mouseX = NSEvent.mouseLocation.x
+                        let start = dragStart ?? (mouseX, sizeStore.width)
                         if dragStart == nil { dragStart = start }
-                        sizeStore.set(ResizeMath.centerPinnedResized(start: start.size, mouseStart: start.mouse, mouseNow: mouse))
+                        sizeStore.set(width: ResizeMath.widthResized(startWidth: start.width, mouseStartX: start.mouseX, mouseNowX: NSEvent.mouseLocation.x))
                     }
                     .onEnded { _ in dragStart = nil }
             )

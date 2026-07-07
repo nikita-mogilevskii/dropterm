@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import DropTermKit
@@ -13,35 +14,33 @@ struct PanelSizeStoreTests {
         return d
     }
 
-    @Test func defaultsTo700x420() {
-        let s = PanelSizeStore(defaults: freshDefaults())
-        #expect(s.size == CGSize(width: 700, height: 420))
+    @Test func defaultsTo700() {
+        #expect(PanelSizeStore(defaults: freshDefaults()).width == 700)
     }
 
     @Test func clampsBothBounds() {
         let s = PanelSizeStore(defaults: freshDefaults())
-        s.set(CGSize(width: 100, height: 5000))
-        #expect(s.size == CGSize(width: 480, height: 800))
-        s.set(CGSize(width: 5000, height: 100))
-        #expect(s.size == CGSize(width: 1200, height: 300))
+        s.set(width: 100)
+        #expect(s.width == 480)
+        s.set(width: 5000)
+        #expect(s.width == 1200)
     }
 
     @Test func persistsAcrossInstances() {
         let d = freshDefaults()
-        PanelSizeStore(defaults: d).set(CGSize(width: 900, height: 500))
-        #expect(PanelSizeStore(defaults: d).size == CGSize(width: 900, height: 500))
+        PanelSizeStore(defaults: d).set(width: 900)
+        #expect(PanelSizeStore(defaults: d).width == 900)
     }
 
-    @Test func corruptDefaultsFallBackToDefaultSize() {
+    @Test func outOfBoundsPersistedWidthClampedOnLoad() {
         let d = freshDefaults()
-        d.set("garbage", forKey: "panelSize.v1")
-        #expect(PanelSizeStore(defaults: d).size == CGSize(width: 700, height: 420))
+        d.set(50.0, forKey: "panelWidth.v2")
+        #expect(PanelSizeStore(defaults: d).width == 480)
     }
 
-    @Test func outOfBoundsPersistedDictIsClampedOnLoad() {
+    @Test func corruptOrMissingDefaultsFallBack() {
         let d = freshDefaults()
-        d.set(["w": 50.0, "h": 5000.0], forKey: "panelSize.v1")
-        let s = PanelSizeStore(defaults: d)
-        #expect(s.size == CGSize(width: 480, height: 800))
+        d.set("garbage", forKey: "panelWidth.v2")
+        #expect(PanelSizeStore(defaults: d).width == 700)
     }
 }

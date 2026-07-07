@@ -1,26 +1,28 @@
 import CoreGraphics
 
-/// Pure geometry for the panel resize path. Extracted so the math that
-/// fixed the v1 screen-edge resize bug stays pinned by tests.
+/// Pure geometry for the panel's Spotlight-style placement and resize.
 public enum ResizeMath {
 
-    /// Bottom-right-corner drag with the panel's horizontal CENTER pinned:
-    /// the right edge only moves half the mouse delta unless doubled, so
-    /// width applies 2x the horizontal delta to keep the edge under the
-    /// cursor. Height is top-pinned and grows downward 1:1 (screen coords,
-    /// bottom-left origin: down = y decreasing).
-    public static func centerPinnedResized(start: CGSize, mouseStart: CGPoint, mouseNow: CGPoint) -> CGSize {
-        CGSize(width: start.width + 2 * (mouseNow.x - mouseStart.x),
-               height: start.height + (mouseStart.y - mouseNow.y))
+    /// Fraction of the screen's visible height the panel always occupies.
+    public static let heightFraction: CGFloat = 0.5
+    /// Fraction of the visible height where the panel's TOP edge sits.
+    public static let topFraction: CGFloat = 0.75
+
+    /// Corner drag with the panel's horizontal center pinned: width applies
+    /// 2x the horizontal mouse delta so the edge keeps tracking the cursor.
+    /// Height is fixed (see spotlightFrame) — the drag only changes width.
+    public static func widthResized(startWidth: CGFloat, mouseStartX: CGFloat, mouseNowX: CGFloat) -> CGFloat {
+        startWidth + 2 * (mouseNowX - mouseStartX)
     }
 
-    /// Spotlight-style frame: horizontally centered in `screenFrame`, top
-    /// edge at 75% of the visible height (AppKit bottom-left origin).
-    public static func spotlightFrame(size: CGSize, screenFrame: CGRect) -> CGRect {
-        let top = screenFrame.minY + screenFrame.height * 0.75
-        return CGRect(x: screenFrame.midX - size.width / 2,
-                      y: top - size.height,
-                      width: size.width,
-                      height: size.height)
+    /// Spotlight-style frame: horizontally centered, top edge at 75% of the
+    /// visible height, height fixed at half the visible height.
+    public static func spotlightFrame(width: CGFloat, screenFrame: CGRect) -> CGRect {
+        let height = screenFrame.height * heightFraction
+        let top = screenFrame.minY + screenFrame.height * topFraction
+        return CGRect(x: screenFrame.midX - width / 2,
+                      y: top - height,
+                      width: width,
+                      height: height)
     }
 }

@@ -1,37 +1,31 @@
 import Foundation
 import CoreGraphics
 
-/// Panel dimensions: clamped, observable, persisted. The resize handle
-/// writes here; the panel frame reads here.
+/// Panel width: clamped, observable, persisted. Height is not stored —
+/// it is always derived from the screen (ResizeMath.spotlightFrame).
 public final class PanelSizeStore: ObservableObject {
 
-    public static let defaultSize = CGSize(width: 700, height: 420)
-    public static let minSize = CGSize(width: 480, height: 300)
-    public static let maxSize = CGSize(width: 1200, height: 800)
-    private static let key = "panelSize.v1"
+    public static let defaultWidth: CGFloat = 700
+    public static let minWidth: CGFloat = 480
+    public static let maxWidth: CGFloat = 1200
+    private static let key = "panelWidth.v2"
 
-    @Published public private(set) var size: CGSize
+    @Published public private(set) var width: CGFloat
 
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        if let dict = defaults.dictionary(forKey: Self.key),
-           let w = dict["w"] as? Double,
-           let h = dict["h"] as? Double {
-            self.size = Self.clamped(CGSize(width: w, height: h))
-        } else {
-            self.size = Self.defaultSize
-        }
+        let stored = defaults.double(forKey: Self.key)
+        self.width = stored > 0 ? Self.clamped(stored) : Self.defaultWidth
     }
 
-    public func set(_ new: CGSize) {
-        size = Self.clamped(new)
-        defaults.set(["w": size.width, "h": size.height], forKey: Self.key)
+    public func set(width new: CGFloat) {
+        width = Self.clamped(new)
+        defaults.set(Double(width), forKey: Self.key)
     }
 
-    private static func clamped(_ s: CGSize) -> CGSize {
-        CGSize(width: min(max(s.width, minSize.width), maxSize.width),
-               height: min(max(s.height, minSize.height), maxSize.height))
+    private static func clamped(_ w: CGFloat) -> CGFloat {
+        min(max(w, minWidth), maxWidth)
     }
 }
