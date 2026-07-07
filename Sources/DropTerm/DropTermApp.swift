@@ -1,19 +1,11 @@
 import SwiftUI
-import DropTermKit
 
 @main
 struct DropTermApp: App {
-    @StateObject private var session = TerminalSession(factory: SwiftTermSurfaceFactory())
-    @StateObject private var sizeStore = PanelSizeStore()
+    @NSApplicationDelegateAdaptor(StatusController.self) private var controller
 
     var body: some Scene {
-        MenuBarExtra {
-            PanelView()
-                .environmentObject(session)
-                .environmentObject(sizeStore)
-        } label: {
-            Image(systemName: "terminal")
-        }
-        .menuBarExtraStyle(.window)
+        // No windows: everything lives in the status item + panel.
+        Settings { EmptyView() }
     }
 }
