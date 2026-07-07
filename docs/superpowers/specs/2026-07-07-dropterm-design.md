@@ -91,6 +91,17 @@ Smoke feedback drove these changes:
     backgroundOpacity (0.1…1.0, default 1.0), backgroundImagePath
     (optional). Corrupt/missing → defaults. Font/background apply live;
     shellMode on respawn.
+15. **Unified panel backdrop (supersedes terminal-scoped background in
+    12/13)**: color, image, and opacity style the WHOLE panel card as
+    one visual surface — not the terminal view alone.
+    - The terminal view is ALWAYS fully transparent (clear background,
+      no embedded image view); glyphs render at full alpha.
+    - The panel card's backdrop layer: background image (aspect-fill)
+      when set, else the background color; the opacity setting applies
+      to that backdrop layer — at <100% the DESKTOP shows through the
+      entire panel (text stays crisp).
+    - Rounded-corner clipping applies to the composite, so backdrop +
+      terminal read as one piece.
 14. **Public release, cadence-style**: app icon (generated, gradient +
     terminal glyph), MIT LICENSE, hero README (icon, badges, install
     with Gatekeeper note, usage table), public GitHub repo
