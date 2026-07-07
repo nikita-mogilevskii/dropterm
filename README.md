@@ -30,8 +30,8 @@ Ctrl+I     Terminal appears   click away     runs in background     Ctrl+I     b
 - **No Dock icon** — pure menu bar, zero visual clutter
 - **Settings panel**
   - Font: choose from system fonts or load custom `.ttf`/`.otf` files
-  - Custom shell command — run zsh, bash, nix shell, or other interpreters
-  - Background color, opacity, and tiled image support
+  - Custom shell command — run zsh, bash, fish, nu, or other interpreters
+  - Background color, opacity, and image support (scaled to fill, aspect-fill)
   - Ctrl+± to scale the font on the fly
 - **Ctrl+W to quit** — close the app without losing session state
 - **Fast keybinds**
@@ -62,6 +62,8 @@ No Xcode needed — Command Line Tools with the macOS 26 SDK are enough:
 ```bash
 git clone https://github.com/nikita-mogilevskii/dropterm.git
 cd dropterm
+swift scripts/makeicon.swift
+iconutil -c icns build/AppIcon.iconset -o build/AppIcon.icns
 ./build.sh          # -> build/DropTerm.app
 open build/DropTerm.app
 ```
@@ -89,9 +91,12 @@ swift run DropTermTests
 All settings live in a simple preferences panel accessible via the menu bar. Changes apply instantly:
 
 - **Fonts:** pick from system fonts or drag in custom `.ttf` or `.otf` files
-- **Shell:** set any shell command (default: login shell)
-- **Background:** choose color (with opacity), or upload an image to tile
+- **Background:** choose color (with opacity), or upload an image scaled to fill (aspect-fill)
 - **Exit behaviour:** always respawns fresh
+
+One setting is not instant:
+
+- **Shell:** set a custom shell command (default: login shell) — applies to the next session (Ctrl+D to respawn now)
 
 State persists in `UserDefaults` (`~/Library/Preferences`).
 

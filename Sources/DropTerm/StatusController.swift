@@ -41,6 +41,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
+        reregisterCustomFontIfNeeded()
         buildPanel()
         hotKey = HotKey { [weak self] in self?.togglePanel() }
 
@@ -107,6 +108,23 @@ final class StatusController: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// CTFontManagerRegisterFontsForURL registration is process-scoped —
+    /// a font loaded via "Load Font File…" in a prior launch is gone until
+    /// re-registered here. Runs before buildPanel()/session start so the
+    /// terminal surface picks up the resolved font on its very first
+    /// `applyAppearance` call, not on a later live-settings update. Errors
+    /// are ignored (worst case: SwiftTermSurface falls back to the system
+    /// monospaced font, same as any other unresolvable fontName).
+    private func reregisterCustomFontIfNeeded() {
+        guard let path = settingsStore.settings.fontFilePath else { return }
+        guard FileManager.default.fileExists(atPath: path) else {
+            settingsStore.settings.fontFilePath = nil
+            settingsStore.settings.fontName = nil
+            return
+        }
+        CTFontManagerRegisterFontsForURL(URL(fileURLWithPath: path) as CFURL, .process, nil)
+    }
+
     // MARK: Panel
 
     private func buildPanel() {
@@ -116,6 +134,9 @@ final class StatusController: NSObject, NSApplicationDelegate {
                              styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: true)
         panel.level = .statusBar
+        // Lets the panel float above fullscreen apps' own Spaces, matching
+        // the README's "even fullscreen apps" claim for the global toggle.
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -211,18 +232,27 @@ final class StatusController: NSObject, NSApplicationDelegate {
     /// Ctrl+W quit, Ctrl+= / Ctrl++ / Ctrl+- font size. Swallowed events
     /// return nil so the terminal never sees them; everything else passes
     /// through untouched (the shell owns all other Ctrl chords).
+    ///
+    /// Modifiers are matched EXACTLY (not just "contains .control") so a
+    /// chord like Ctrl+Cmd+W — which still `.contains(.control)` — passes
+    /// through instead of quitting the app. Shift is allowed in addition
+    /// to Control only for the "+" case, since Ctrl+Shift+= is how a US
+    /// keyboard actually types Ctrl++ (Shift is what turns "=" into "+").
     private func handlePanelKeyDown(_ event: NSEvent) -> NSEvent? {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control) else {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isPlainControl = flags == .control
+        let isControlShift = flags == [.control, .shift]
+        guard isPlainControl || isControlShift else {
             return event
         }
         switch event.charactersIgnoringModifiers {
-        case "w":
+        case "w" where isPlainControl:
             NSApp.terminate(nil)
             return nil
         case "=", "+":
             settingsStore.bumpFontSize(1)
             return nil
-        case "-":
+        case "-" where isPlainControl:
             settingsStore.bumpFontSize(-1)
             return nil
         default:

@@ -38,15 +38,20 @@ func draw(size: Int) -> NSImage {
     return image
 }
 
+// Apple's iconset spec has no 64pt slot (it jumps 32pt -> 128pt) — 64px
+// pixel data only ever appears as icon_32x32@2x.png. Emitting icon_64x64.png
+// or icon_64x64@2x.png alongside it are non-canonical extras `iconutil`
+// doesn't ask for, so both are skipped explicitly below to keep the
+// output to exactly the canonical 10-file set.
 for size in sizes {
     let image = draw(size: size)
     guard let tiff = image.tiffRepresentation,
           let rep = NSBitmapImageRep(data: tiff),
           let png = rep.representation(using: .png, properties: [:]) else { continue }
-    if size < 1024 {
+    if size < 1024 && size != 64 {
         try png.write(to: URL(fileURLWithPath: "\(iconsetPath)/icon_\(size)x\(size).png"))
     }
-    if size >= 32 {
+    if size >= 32 && size != 128 {
         try png.write(to: URL(fileURLWithPath: "\(iconsetPath)/icon_\(size / 2)x\(size / 2)@2x.png"))
     }
 }

@@ -93,6 +93,7 @@ struct SettingsView: View {
         }
         fontLoadError = nil
         store.settings.fontName = name
+        store.settings.fontFilePath = url.path
         monospacedFamilies = Self.fixedPitchFamilies()
     }
 

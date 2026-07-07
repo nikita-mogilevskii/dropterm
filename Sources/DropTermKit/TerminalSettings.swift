@@ -11,6 +11,10 @@ public struct TerminalSettings: Codable, Equatable {
     public var shellMode: ShellMode = .automatic
     /// nil = SwiftTerm's default monospaced font.
     public var fontName: String? = nil
+    /// Path to the .ttf/.otf a custom `fontName` was loaded from, so it can
+    /// be re-registered with CTFontManager on next launch — registration is
+    /// process-scoped and does not survive relaunch on its own.
+    public var fontFilePath: String? = nil
     public var fontSize: CGFloat = 13
     public var backgroundColorHex: String = "#000000"
     public var backgroundOpacity: CGFloat = 1.0
