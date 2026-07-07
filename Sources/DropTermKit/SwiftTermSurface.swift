@@ -66,8 +66,7 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
         terminalView.nativeBackgroundColor = .black
         terminalView.nativeForegroundColor = .white
 
-        var environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
-        environment.append("LANG=en_US.UTF-8")
+        let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
 
         // LocalProcessTerminalView.startProcess takes currentDirectory directly
         // (forwarded to LocalProcess -> PseudoTerminalHelpers.fork, which chdirs

@@ -37,4 +37,11 @@ struct PanelSizeStoreTests {
         d.set("garbage", forKey: "panelSize.v1")
         #expect(PanelSizeStore(defaults: d).size == CGSize(width: 700, height: 420))
     }
+
+    @Test func outOfBoundsPersistedDictIsClampedOnLoad() {
+        let d = freshDefaults()
+        d.set(["w": 50.0, "h": 5000.0], forKey: "panelSize.v1")
+        let s = PanelSizeStore(defaults: d)
+        #expect(s.size == CGSize(width: 480, height: 800))
+    }
 }
