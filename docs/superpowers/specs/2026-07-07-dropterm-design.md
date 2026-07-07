@@ -1,7 +1,47 @@
 # DropTerm — Design Spec
 
 **Date:** 2026-07-07
-**Status:** Approved pending user review
+**Status:** v4 — post-smoke iteration (v1.1)
+
+## v1.1 amendments (supersede conflicting v1 requirements below)
+
+Smoke feedback drove these changes:
+
+1. **Window architecture**: manual `NSStatusItem` + borderless key-able
+   `NSPanel` (hosting the SwiftUI panel via `NSHostingView`) replaces
+   `MenuBarExtra` — required because v1.1 needs right-click menus and
+   programmatic open, which MenuBarExtra cannot do.
+   - Left-click status item: toggle the panel (anchored under the item,
+     top-right corner pinned; grows leftward/downward).
+   - Right-click status item: NSMenu with "Launch at login" (checkmark
+     state, toggles SMAppService) and "Quit DropTerm".
+   - Panel closes on outside click (event monitor) and Esc-free: no
+     titlebar, no chrome buttons.
+2. **Footer chin REMOVED entirely** — no Jump-to-iTerm2, no Restart, no
+   Quit buttons, no launch-at-login toggle in the panel. Panel = terminal
+   card only. Restart path = exit/Ctrl+D (auto-respawn) or Retry on the
+   failure overlay. Quit + launch-at-login live in the right-click menu.
+3. **iTerm2 jump feature DELETED** (kit code + scripts + tests). tmux
+   session backing stays (persistence across app restarts). Manual
+   `tmux attach -t dropterm` from any terminal still works by design.
+4. **Terminal content inset**: 8pt padding between the black rounded
+   card's edges and the terminal view so glyphs never clip under the
+   corner radius.
+5. **Scrollbar hidden** — SwiftTerm's embedded scroller is not shown
+   (scrolling behavior unchanged).
+6. **Resize handle invisible** — same bottom-right drag region (~18pt),
+   no glyph. Feature unchanged.
+7. **Resize math is screen-anchored**: deltas computed from
+   `NSEvent.mouseLocation` (screen coords) captured at drag start — NOT
+   from SwiftUI gesture translation, which breaks when macOS shifts the
+   panel away from the screen edge mid-drag (v1 bug: hitting the right
+   screen edge inverted/exploded the size). Height delta is
+   y-flipped (AppKit origin bottom-left). Panel repositions to keep its
+   top-right anchor as size changes.
+8. **Global hotkey Ctrl+I** toggles the panel from anywhere (Carbon
+   `RegisterEventHotKey` — no TCC permission needed). Known trade-off,
+   user-accepted: system-wide Ctrl+I capture shadows Tab semantics in
+   terminal apps; combo is one constant if it needs changing.
 
 ## What
 
