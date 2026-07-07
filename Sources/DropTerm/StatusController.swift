@@ -88,10 +88,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
     private func applyPanelSize(_ size: CGSize) {
         guard let panel else { return }
         let old = panel.frame
-        let newFrame = NSRect(x: old.maxX - size.width,
-                              y: old.maxY - size.height,
-                              width: size.width, height: size.height)
-        panel.setFrame(newFrame, display: true)
+        panel.setFrame(ResizeMath.topRightAnchored(oldFrame: old, newSize: size), display: true)
     }
 
     private func togglePanel() {

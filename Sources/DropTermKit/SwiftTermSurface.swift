@@ -76,9 +76,6 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
         // separate code path (scrollWheel(with:) -> scrollUp/scrollDown) that
         // doesn't touch the scroller view at all, so it keeps working.
         Self.hideScroller(in: terminalView)
-        DispatchQueue.main.async { [terminalView] in
-            Self.hideScroller(in: terminalView)
-        }
 
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
 

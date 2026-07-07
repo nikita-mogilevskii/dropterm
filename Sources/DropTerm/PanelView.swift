@@ -75,9 +75,7 @@ struct ResizeHandle: View {
                         let mouse = NSEvent.mouseLocation
                         let start = dragStart ?? (mouse, sizeStore.size)
                         if dragStart == nil { dragStart = start }
-                        sizeStore.set(CGSize(
-                            width: start.size.width + (mouse.x - start.mouse.x),
-                            height: start.size.height + (start.mouse.y - mouse.y)))
+                        sizeStore.set(ResizeMath.resized(start: start.size, mouseStart: start.mouse, mouseNow: mouse))
                     }
                     .onEnded { _ in dragStart = nil }
             )

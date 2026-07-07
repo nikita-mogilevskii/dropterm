@@ -31,6 +31,6 @@ xctest host binary — so the suite is an executable swift-testing host.)
 ## Architecture
 
 `DropTermKit` (session state machine behind an injectable surface factory,
-pure tmux/AppleScript resolvers, persisted size store) + thin SwiftUI
-`MenuBarExtra` executable hosting SwiftTerm's terminal view. Design docs
-in `docs/superpowers/`.
+pure tmux/resize resolvers, persisted size store) + an `NSStatusItem`-driven
+borderless key panel (`StatusController`) hosting a thin SwiftUI view over
+SwiftTerm's terminal view. Design docs in `docs/superpowers/`.
