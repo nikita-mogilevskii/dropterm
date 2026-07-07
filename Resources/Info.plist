@@ -20,7 +20,5 @@
     <string>26.0</string>
     <key>LSUIElement</key>
     <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>DropTerm opens iTerm2 so you can continue your terminal session there.</string>
 </dict>
 </plist>

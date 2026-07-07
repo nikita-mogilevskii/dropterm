@@ -38,8 +38,8 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
         p.standardOutput = pipe
         p.standardError = Pipe()
         guard (try? p.run()) != nil else { return nil }
-        // Bound the wait: this can run on the main thread (jump button), and
-        // a hung lsof must not freeze the app.
+        // Bound the wait: currentDirectory can be read from the main thread,
+        // and a hung lsof must not freeze the app.
         let sem = DispatchSemaphore(value: 0)
         DispatchQueue.global().async {
             p.waitUntilExit()
@@ -66,6 +66,20 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
         terminalView.nativeBackgroundColor = .black
         terminalView.nativeForegroundColor = .white
 
+        // SwiftTerm's macOS TerminalView has no public scrollerVisible /
+        // allowScrolling switch (checked MacTerminalView.swift) — it wires an
+        // NSScroller as a private subview in setup() -> setupScroller(),
+        // created synchronously and unconditionally (before this initializer
+        // returns), so hiding it here is not racing a later layout pass.
+        // Hidden scroller still tracks state (updateScroller toggles isEnabled/
+        // doubleValue, never isHidden), and wheel/trackpad scrolling is a
+        // separate code path (scrollWheel(with:) -> scrollUp/scrollDown) that
+        // doesn't touch the scroller view at all, so it keeps working.
+        Self.hideScroller(in: terminalView)
+        DispatchQueue.main.async { [terminalView] in
+            Self.hideScroller(in: terminalView)
+        }
+
         let environment = Terminal.getEnvironmentVariables(termName: "xterm-256color")
 
         // LocalProcessTerminalView.startProcess takes currentDirectory directly
@@ -75,6 +89,12 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
                                   args: command.args,
                                   environment: environment,
                                   currentDirectory: directory)
+    }
+
+    /// No public API hides SwiftTerm's macOS scroller, so reach into its
+    /// subviews directly.
+    private static func hideScroller(in terminalView: NSView) {
+        terminalView.subviews.compactMap { $0 as? NSScroller }.forEach { $0.isHidden = true }
     }
 
     func terminateProcess() {

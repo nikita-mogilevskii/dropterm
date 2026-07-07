@@ -6,8 +6,6 @@ click away, the session keeps running.
 - **Persistent session** — tmux-backed when tmux is installed (survives
   even app restarts), plain login shell otherwise
 - **Exit = reset** — `exit`/Ctrl+D respawns a fresh shell with a crossfade
-- **Jump to iTerm2** — tmux mode hands the live session over (same jobs,
-  same scrollback); plain mode opens iTerm2 at your current directory
 - **Resizable** — drag the bottom-right corner; size is remembered
 - **macOS 26** — native material chrome, black rounded terminal card,
   no Dock icon
@@ -20,8 +18,6 @@ No Xcode required — Command Line Tools with the macOS 26 SDK suffice:
 ./build.sh          # -> build/DropTerm.app
 open build/DropTerm.app
 ```
-
-First iTerm2 jump triggers the macOS automation prompt — allow it once.
 
 ## Test
 
