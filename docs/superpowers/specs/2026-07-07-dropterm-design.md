@@ -57,6 +57,47 @@ Smoke feedback drove these changes:
     center-pinned, clamped 480…1200, persisted). PanelSizeStore stores
     width alone.
 
+## v1.2 amendments (settings + publish)
+
+11. **In-panel keyboard commands** (local NSEvent monitor, active ONLY
+    while the panel is key — never global; Ctrl+I stays the only global
+    binding):
+    - **Ctrl+W → quit DropTerm entirely** (NSApp.terminate). tmux-backed
+      sessions survive in the tmux server by design.
+    - **Ctrl+= / Ctrl+- → font scale up/down** (±1pt per press, clamped
+      8…28, applied live to the terminal view, persisted). Panel frame
+      never changes — bigger/smaller glyphs fit less/more content.
+    Monitor consumes matched events (returns nil) so the shell never
+    sees them; installed on panel show, removed on hide.
+12. **Settings window**, opened from a new "Settings…" item in the
+    status item's right-click menu (standard titled NSWindow hosting a
+    SwiftUI Form; single instance, front-and-center on open):
+    - **Font**: picker over installed monospaced font families + size
+      stepper (base size; Ctrl± scales from it). "Load font file…"
+      button registers a .ttf/.otf via CTFontManagerRegisterFontsForURL
+      (process scope) and selects it.
+    - **Shell**: mode radio — "Automatic" (existing tmux→login-shell
+      resolution) or "Custom command" with a full-path text field
+      (e.g. /opt/homebrew/bin/fish or any binary; run with no args,
+      cwd $HOME). Applies on next session (respawn note shown).
+    - **Background**: color well + opacity slider (10…100%), optional
+      background image (file picker, aspect-fill behind the text,
+      clear button). Color/opacity/image apply LIVE to the terminal
+      view (Terminal.app-style "Color & Effects" scope).
+13. **TerminalSettings model** (Codable, UserDefaults key
+    "settings.v1", SettingsStore ObservableObject): shellMode
+    (.automatic | .custom(path)), fontName (nil = system mono),
+    fontSize (8…28, default 13), backgroundColorHex (default #000000),
+    backgroundOpacity (0.1…1.0, default 1.0), backgroundImagePath
+    (optional). Corrupt/missing → defaults. Font/background apply live;
+    shellMode on respawn.
+14. **Public release, cadence-style**: app icon (generated, gradient +
+    terminal glyph), MIT LICENSE, hero README (icon, badges, install
+    with Gatekeeper note, usage table), public GitHub repo
+    nikita-mogilevskii/dropterm, v1.2.0 release with ad-hoc signed
+    Cadence-pattern zip. Clean noreply identity (already the case since
+    commit #1).
+
 ## What
 
 A macOS menu-bar-only app hosting a real interactive terminal inside a
