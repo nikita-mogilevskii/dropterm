@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import SwiftUI
 
 public struct TerminalSettings: Codable, Equatable {
     public enum ShellMode: Codable, Equatable {
@@ -87,5 +88,17 @@ public extension NSColor {
         let g = Int((c.greenComponent * 255).rounded())
         let b = Int((c.blueComponent * 255).rounded())
         return String(format: "#%02X%02X%02X", r, g, b)
+    }
+}
+
+/// SwiftUI bridge over the NSColor hex parser above — one parser, not two.
+/// Used by PanelView's backdrop (spec amendment 15: color/image/opacity
+/// style the whole panel card, not the terminal view).
+public extension Color {
+    /// `nil` on anything `NSColor(hex:)` can't parse; callers fall back to
+    /// `.black` per the settings contract.
+    init?(hex: String) {
+        guard let ns = NSColor(hex: hex) else { return nil }
+        self.init(nsColor: ns)
     }
 }

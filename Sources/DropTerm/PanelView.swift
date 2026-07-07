@@ -4,6 +4,7 @@ import DropTermKit
 struct PanelView: View {
     @EnvironmentObject private var session: TerminalSession
     @EnvironmentObject private var sizeStore: PanelSizeStore
+    @EnvironmentObject private var settingsStore: SettingsStore
 
     var body: some View {
         terminalCard
@@ -13,9 +14,13 @@ struct PanelView: View {
             .onAppear { session.startIfNeeded() }
     }
 
-    /// Black rounded terminal card. The inner 8pt padding keeps glyphs clear
-    /// of the corner radius (they clipped in v1). Crossfade keyed on
+    /// Rounded terminal card. The inner 8pt padding keeps glyphs clear of
+    /// the corner radius (they clipped in v1). Crossfade keyed on
     /// generation: old terminal fades out, fresh one fades in on respawn.
+    /// Backdrop (color/image/opacity) styles the whole card as one visual
+    /// surface (spec amendment 15) — the terminal view itself is always
+    /// fully transparent, so at <100% opacity the desktop shows through the
+    /// entire card while glyphs stay crisp.
     private var terminalCard: some View {
         ZStack {
             TerminalHostView()
@@ -29,8 +34,28 @@ struct PanelView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: session.generation)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
+        .background(backdrop)
         .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// Image (aspect-fill, clipped so it never distorts the card's layout)
+    /// when set, else the flat color; opacity applies to this whole layer
+    /// so it reads as one composited surface with the terminal on top.
+    @ViewBuilder
+    private var backdrop: some View {
+        Group {
+            if let path = settingsStore.settings.backgroundImagePath,
+               let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            } else {
+                Color(hex: settingsStore.settings.backgroundColorHex) ?? Color.black
+            }
+        }
+        .opacity(settingsStore.settings.backgroundOpacity)
     }
 }
 

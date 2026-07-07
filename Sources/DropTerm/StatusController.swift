@@ -145,7 +145,8 @@ final class StatusController: NSObject, NSApplicationDelegate {
         panel.contentView = NSHostingView(rootView:
             PanelView()
                 .environmentObject(session)
-                .environmentObject(sizeStore))
+                .environmentObject(sizeStore)
+                .environmentObject(settingsStore))
 
         // Panel frame follows the size store (resize handle writes there);
         // re-derive the Spotlight-style frame so resizing stays centered.

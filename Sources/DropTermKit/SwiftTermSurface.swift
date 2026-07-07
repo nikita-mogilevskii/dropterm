@@ -24,21 +24,11 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
     private let onProcessExit: (Int32?) -> Void
     private(set) var lastReportedDirectory: String?
 
-    /// Stable wrapper: `imageView` (background, hidden unless a settings
-    /// image is loaded) sits BEHIND `terminalView`. Identity never changes
-    /// after init — appearance updates mutate the image view in place —
-    /// so TerminalHostView's NSViewRepresentable never sees `view`'s
-    /// identity change and never has to notice a re-parent between SwiftUI
-    /// render passes (it only re-attaches when `view` itself is a new
-    /// object; nothing currently forces that update if we swapped roots
-    /// out from under it after settings changes).
-    private let containerView: NSView
-    private let imageView: NSImageView
-
-    var view: NSView { containerView }
-    /// The container itself never accepts key events (plain NSView) — the
-    /// real interactive surface is always `terminalView`.
-    var focusView: NSView { terminalView }
+    /// Background/image/opacity now live on the panel card (PanelView's
+    /// backdrop, spec amendment 15) — the terminal view is the whole
+    /// surface here, always transparent, so it doubles as `focusView` via
+    /// the protocol's default extension.
+    var view: NSView { terminalView }
 
     /// OSC 7 report when the shell emits one; lsof on the shell pid
     /// otherwise (a bare `zsh -l` never emits OSC 7).
@@ -80,35 +70,11 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
          onProcessExit: @escaping (Int32?) -> Void) {
         self.onProcessExit = onProcessExit
         self.terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
-        self.imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
-        self.containerView = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 400))
         super.init()
-
-        containerView.wantsLayer = true
-        imageView.wantsLayer = true
-        imageView.isHidden = true   // no image configured until applyAppearance says otherwise
-
-        // Image behind, terminal on top — CALayer sublayers always paint
-        // over their parent's own drawn content, so this only needs
-        // sibling z-order, not any special "insert below" trick.
-        containerView.addSubview(imageView)
-        containerView.addSubview(terminalView)
-        for v in [imageView, terminalView] {
-            v.translatesAutoresizingMaskIntoConstraints = false
-        }
-        NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: containerView.topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
-            imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            terminalView.topAnchor.constraint(equalTo: containerView.topAnchor),
-            terminalView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
-            terminalView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            terminalView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-        ])
 
         terminalView.processDelegate = self
         terminalView.nativeForegroundColor = .white
+        Self.makeFullyTransparent(terminalView)
 
         // SwiftTerm's macOS TerminalView has no public scrollerVisible /
         // allowScrolling switch (checked MacTerminalView.swift) — it wires an
@@ -138,46 +104,34 @@ final class SwiftTermSurface: NSObject, TerminalSurface, LocalProcessTerminalVie
         applyAppearance(settings)
     }
 
-    /// Font + background color/opacity + background image, all live-updatable.
-    ///
-    /// Background: TerminalView.nativeBackgroundColor feeds two paint paths
-    /// (checked in SwiftTerm's Apple/AppleTerminalView.swift +
-    /// Mac/MacTerminalView.swift) — (1) every default-background glyph cell
-    /// is filled per-run via `mapColor(.defaultColor) -> nativeBackgroundColor`
-    /// directly (alpha intact, no lossy Color-struct round trip), and (2) the
-    /// view's own CALayer.backgroundColor, painted once in setupOptions()
-    /// during init and NOT refreshed by the nativeBackgroundColor setter — so
-    /// we refresh it here ourselves on every appearance change, plus force a
-    /// redisplay since the setter doesn't request one either (unlike the
-    /// `font` setter, which calls resetFont() -> needsDisplay = true).
-    /// CALayer's default isOpaque is false, so an alpha < 1 here composites
-    /// straight through to imageView underneath with no extra flag to flip.
+    /// Font only, live-updatable. Background/opacity/image moved to the
+    /// panel card (spec amendment 15, PanelView.backdrop) — this surface no
+    /// longer has an appearance path for any of them.
     private func applyAppearance(_ settings: TerminalSettings) {
         terminalView.font = Self.resolvedFont(settings)
-
-        let color = (NSColor(hex: settings.backgroundColorHex) ?? .black)
-            .withAlphaComponent(settings.backgroundOpacity)
-        terminalView.nativeBackgroundColor = color
-        terminalView.layer?.backgroundColor = color.cgColor
-        terminalView.needsDisplay = true
-
-        updateBackgroundImage(path: settings.backgroundImagePath)
     }
 
-    private func updateBackgroundImage(path: String?) {
-        guard let path,
-              let nsImage = NSImage(contentsOfFile: path),
-              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            imageView.isHidden = true
-            imageView.layer?.contents = nil
-            return
-        }
-        // NSImageView.imageScaling has no true "fill and crop" option; the
-        // layer's contentsGravity does (this is the standard AppKit trick
-        // for aspect-fill), so drive the image through the layer directly.
-        imageView.layer?.contentsGravity = .resizeAspectFill
-        imageView.layer?.contents = cgImage
-        imageView.isHidden = false
+    /// The terminal view is ALWAYS fully transparent so the panel card's
+    /// backdrop (color/image/opacity) shows straight through and glyphs
+    /// render at full alpha regardless of backdrop opacity. Set once, here,
+    /// for the surface's whole lifetime — nothing in settings ever touches
+    /// this again.
+    ///
+    /// TerminalView.nativeBackgroundColor feeds two paint paths (checked in
+    /// SwiftTerm's Apple/AppleTerminalView.swift + Mac/MacTerminalView.swift):
+    /// (1) every default-background glyph cell is filled per-run via
+    /// `mapColor(.defaultColor) -> nativeBackgroundColor` directly, and (2)
+    /// the view's own CALayer.backgroundColor, painted once in
+    /// setupOptions() during init and NOT refreshed by the
+    /// nativeBackgroundColor setter — so both must be set to clear
+    /// explicitly, plus a forced redisplay since the setter doesn't request
+    /// one either (unlike the `font` setter, which calls resetFont() ->
+    /// needsDisplay = true). CALayer's default isOpaque is false, so alpha 0
+    /// here composites straight through to whatever sits behind the view.
+    private static func makeFullyTransparent(_ terminalView: LocalProcessTerminalView) {
+        terminalView.nativeBackgroundColor = .clear
+        terminalView.layer?.backgroundColor = NSColor.clear.cgColor
+        terminalView.needsDisplay = true
     }
 
     private static func resolvedFont(_ settings: TerminalSettings) -> NSFont {
