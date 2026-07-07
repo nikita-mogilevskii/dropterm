@@ -42,6 +42,15 @@ Smoke feedback drove these changes:
    `RegisterEventHotKey` — no TCC permission needed). Known trade-off,
    user-accepted: system-wide Ctrl+I capture shadows Tab semantics in
    terminal apps; combo is one constant if it needs changing.
+9. **Spotlight-style positioning (supersedes under-item anchoring)**:
+   the panel is ALWAYS horizontally centered on the screen with the
+   status item (fallback main screen), its top edge at Spotlight height
+   (top edge at 75% of the visible frame, AppKit coords). Applies to
+   click-open, hotkey-open, and every resize: the anchor is TOP-CENTER
+   — width grows symmetrically around the center line, height grows
+   downward. Because the center is pinned, the resize drag applies 2×
+   the horizontal mouse delta so the right edge keeps tracking the
+   cursor.
 
 ## What
 
