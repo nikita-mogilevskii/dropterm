@@ -29,8 +29,13 @@ struct TerminalHostView: NSViewRepresentable {
             terminal.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             terminal.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
+        // The hosted root (`terminal`) may just be a layout container when
+        // the surface sits a background image behind the real SwiftTerm
+        // view (see SwiftTermSurface.focusView) — key focus must go to the
+        // actual interactive view, not whatever wraps it.
+        let focusTarget = session.currentFocusView ?? terminal
         DispatchQueue.main.async {
-            terminal.window?.makeFirstResponder(terminal)
+            focusTarget.window?.makeFirstResponder(focusTarget)
         }
     }
 }

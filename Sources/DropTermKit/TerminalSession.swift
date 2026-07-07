@@ -19,8 +19,17 @@ public final class TerminalSession: ObservableObject {
     /// Increments on every spawn; the UI keys the crossfade off this.
     @Published public private(set) var generation = 0
 
-    public let mode: SessionMode
-    private let command: ResolvedCommand
+    /// The mode the most recent spawn resolved to. Not `let`: a
+    /// settings-backed provider re-resolves on every spawn, so shell-mode
+    /// changes take effect on the next respawn with no extra plumbing.
+    public private(set) var mode: SessionMode
+    private var command: ResolvedCommand
+    /// Re-resolved fresh on every spawn(). The `resolved:` init below seeds
+    /// this with a provider that always returns the same captured value
+    /// (matching the old `let command` behavior exactly, for existing
+    /// tests); the `settingsStore:` init seeds it with a provider that reads
+    /// the store live.
+    private let commandProvider: () -> (mode: SessionMode, command: ResolvedCommand)
     private let factory: TerminalSurfaceFactory
     /// Marshals exit callbacks (main queue in production, identity in tests).
     private let hop: (@escaping () -> Void) -> Void
@@ -34,6 +43,7 @@ public final class TerminalSession: ObservableObject {
     private static let rapidExitLimit = 2
 
     public var currentView: NSView? { surface?.view }
+    public var currentFocusView: NSView? { surface?.focusView }
     public var currentDirectory: String? { surface?.currentDirectory }
 
     public init(factory: TerminalSurfaceFactory,
@@ -41,8 +51,25 @@ public final class TerminalSession: ObservableObject {
                 now: @escaping () -> Date = Date.init,
                 hop: @escaping (@escaping () -> Void) -> Void = { work in DispatchQueue.main.async(execute: work) }) {
         self.factory = factory
+        self.commandProvider = { resolved }
         self.mode = resolved.mode
         self.command = resolved.command
+        self.now = now
+        self.hop = hop
+    }
+
+    /// Settings-aware convenience init: shell mode is re-resolved from the
+    /// store on every spawn (see `commandProvider`), so flipping
+    /// automatic/custom shell in Settings applies on the next respawn.
+    public init(factory: TerminalSurfaceFactory,
+                settingsStore: SettingsStore,
+                now: @escaping () -> Date = Date.init,
+                hop: @escaping (@escaping () -> Void) -> Void = { work in DispatchQueue.main.async(execute: work) }) {
+        self.factory = factory
+        self.commandProvider = { SessionCommand.resolve(settings: settingsStore.settings) }
+        let initial = SessionCommand.resolve(settings: settingsStore.settings)
+        self.mode = initial.mode
+        self.command = initial.command
         self.now = now
         self.hop = hop
     }
@@ -67,7 +94,16 @@ public final class TerminalSession: ObservableObject {
         spawn()
     }
 
+    /// Live-apply appearance settings (font, background) to whatever surface
+    /// is currently running. No-op if no session has spawned yet.
+    public func applySettings(_ settings: TerminalSettings) {
+        surface?.apply(settings: settings)
+    }
+
     private func spawn() {
+        let resolved = commandProvider()
+        mode = resolved.mode
+        command = resolved.command
         let gen = generation + 1
         do {
             let newSurface = try factory.makeSurface(

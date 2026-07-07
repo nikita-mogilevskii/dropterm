@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import AppKit
 
 public struct TerminalSettings: Codable, Equatable {
     public enum ShellMode: Codable, Equatable {
@@ -56,5 +57,31 @@ public final class SettingsStore: ObservableObject {
         if let data = try? JSONEncoder().encode(settings) {
             defaults.set(data, forKey: Self.key)
         }
+    }
+}
+
+/// Shared by SwiftTermSurface (render the setting) and SettingsView (edit
+/// it via ColorPicker) — one hex<->NSColor conversion, not two.
+public extension NSColor {
+    /// Parses "#RRGGBB" (case-insensitive, leading # optional). `nil` on
+    /// anything else — per the settings contract, callers fall back to black.
+    convenience init?(hex: String) {
+        var s = hex
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let value = UInt32(s, radix: 16) else { return nil }
+        self.init(srgbRed: CGFloat((value >> 16) & 0xFF) / 255.0,
+                  green: CGFloat((value >> 8) & 0xFF) / 255.0,
+                  blue: CGFloat(value & 0xFF) / 255.0,
+                  alpha: 1.0)
+    }
+
+    /// "#RRGGBB" round-trip for persistence/UI. Alpha is dropped —
+    /// `TerminalSettings.backgroundOpacity` tracks that separately.
+    var hexString: String {
+        guard let c = usingColorSpace(.sRGB) else { return "#000000" }
+        let r = Int((c.redComponent * 255).rounded())
+        let g = Int((c.greenComponent * 255).rounded())
+        let b = Int((c.blueComponent * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }

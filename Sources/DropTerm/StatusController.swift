@@ -13,10 +13,25 @@ final class StatusController: NSObject, NSApplicationDelegate {
     private var panel: KeyablePanel!
     private var hotKey: HotKey?
     private var clickOutsideMonitor: Any?
+    private var keyMonitor: Any?
     private var sizeObservation: AnyCancellable?
+    private var settingsObservation: AnyCancellable?
+    private var settingsWindow: NSWindow?
 
-    private let session = TerminalSession(factory: SwiftTermSurfaceFactory())
+    private let settingsStore: SettingsStore
+    private let session: TerminalSession
     private let sizeStore = PanelSizeStore()
+
+    override init() {
+        // Session and factory hang off the same store: the factory reads
+        // appearance at surface creation, the session re-resolves the
+        // shell command from it on every respawn.
+        let store = SettingsStore()
+        settingsStore = store
+        session = TerminalSession(factory: SwiftTermSurfaceFactory(settingsStore: store),
+                                  settingsStore: store)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -28,6 +43,13 @@ final class StatusController: NSObject, NSApplicationDelegate {
 
         buildPanel()
         hotKey = HotKey { [weak self] in self?.togglePanel() }
+
+        // Live-apply font/background edits to the running surface. Shell
+        // mode is deliberately NOT applied live — it takes effect on the
+        // next respawn (the session re-resolves via its commandProvider).
+        settingsObservation = settingsStore.$settings
+            .removeDuplicates()
+            .sink { [weak self] in self?.session.applySettings($0) }
     }
 
     // MARK: Clicks
@@ -43,6 +65,10 @@ final class StatusController: NSObject, NSApplicationDelegate {
     /// Transient menu trick: attach, click, detach — keeps left-click custom.
     private func showMenu() {
         let menu = NSMenu()
+        let settings = NSMenuItem(title: "Settings…",
+                                  action: #selector(openSettingsWindow), keyEquivalent: "")
+        settings.target = self
+        menu.addItem(settings)
         let login = NSMenuItem(title: "Launch at login",
                                action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         login.target = self
@@ -59,6 +85,26 @@ final class StatusController: NSObject, NSApplicationDelegate {
 
     @objc private func toggleLaunchAtLogin() {
         LoginItem.set(!LoginItem.isEnabled)
+    }
+
+    // MARK: Settings window
+
+    /// Single reusable titled window; closing only orders it out
+    /// (isReleasedWhenClosed = false), reopening brings the same one back.
+    @objc private func openSettingsWindow() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
+                                  styleMask: [.titled, .closable],
+                                  backing: .buffered, defer: false)
+            window.title = "DropTerm Settings"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView:
+                SettingsView().environmentObject(settingsStore))
+            settingsWindow = window
+        }
+        settingsWindow?.center()
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     // MARK: Panel
@@ -104,11 +150,13 @@ final class StatusController: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         session.startIfNeeded()
         installClickOutsideMonitor()
+        installKeyMonitor()
     }
 
     private func hidePanel() {
         panel.orderOut(nil)
         removeClickOutsideMonitor()
+        removeKeyMonitor()
     }
 
     /// Spotlight-style positioning (v1.1 amendment 9, supersedes the old
@@ -135,6 +183,50 @@ final class StatusController: NSObject, NSApplicationDelegate {
         if let clickOutsideMonitor {
             NSEvent.removeMonitor(clickOutsideMonitor)
             self.clickOutsideMonitor = nil
+        }
+    }
+
+    // MARK: In-panel key commands
+
+    /// Local monitor lives only while the panel is visible (installed on
+    /// show, removed on hide, mirroring the outside-click monitor). Local
+    /// monitors see every keyDown in OUR app though, so events are also
+    /// gated to the panel itself — Ctrl+W typed into the Settings window
+    /// must not quit the app.
+    private func installKeyMonitor() {
+        removeKeyMonitor()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.panel else { return event }
+            return self.handlePanelKeyDown(event)
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+    }
+
+    /// Ctrl+W quit, Ctrl+= / Ctrl++ / Ctrl+- font size. Swallowed events
+    /// return nil so the terminal never sees them; everything else passes
+    /// through untouched (the shell owns all other Ctrl chords).
+    private func handlePanelKeyDown(_ event: NSEvent) -> NSEvent? {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control) else {
+            return event
+        }
+        switch event.charactersIgnoringModifiers {
+        case "w":
+            NSApp.terminate(nil)
+            return nil
+        case "=", "+":
+            settingsStore.bumpFontSize(1)
+            return nil
+        case "-":
+            settingsStore.bumpFontSize(-1)
+            return nil
+        default:
+            return event
         }
     }
 }
