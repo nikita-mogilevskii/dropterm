@@ -21,6 +21,14 @@ public enum SessionMode: Equatable {
 public enum SessionCommand {
     public static let tmuxSessionName = "dropterm"
 
+    /// tmux session name for tile `index` (0-based). Tile 0 keeps the
+    /// canonical "dropterm" (so a lone tile matches what a manual
+    /// `tmux attach -t dropterm` expects); further tiles get suffixed
+    /// names so they don't mirror each other.
+    public static func tmuxSessionName(forTile index: Int) -> String {
+        index == 0 ? tmuxSessionName : "\(tmuxSessionName)-\(index + 1)"
+    }
+
     static let tmuxLocations = [
         "/opt/homebrew/bin/tmux",
         "/usr/local/bin/tmux",
@@ -52,5 +60,26 @@ public enum SessionCommand {
             return (.plain(shell: path), ResolvedCommand(exec: path, args: []))
         }
         return resolve(fileExists: fileExists, shell: shell)
+    }
+
+    /// Settings + tile-aware resolution. Custom shell mode bypasses tmux
+    /// (every tile runs the same custom binary, no session naming). In
+    /// automatic mode, tmux tiles get a per-tile session name.
+    public static func resolve(
+        settings: TerminalSettings,
+        tileIndex: Int,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        shell: String? = ProcessInfo.processInfo.environment["SHELL"]
+    ) -> (mode: SessionMode, command: ResolvedCommand) {
+        if case .custom(let path) = settings.shellMode {
+            return (.plain(shell: path), ResolvedCommand(exec: path, args: []))
+        }
+        if let tmux = tmuxLocations.first(where: fileExists) {
+            return (.tmux(path: tmux),
+                    ResolvedCommand(exec: tmux,
+                                    args: ["new-session", "-A", "-s", tmuxSessionName(forTile: tileIndex)]))
+        }
+        let loginShell = shell ?? "/bin/zsh"
+        return (.plain(shell: loginShell), ResolvedCommand(exec: loginShell, args: ["-l"]))
     }
 }

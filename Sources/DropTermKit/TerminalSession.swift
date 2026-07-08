@@ -29,7 +29,7 @@ public final class TerminalSession: ObservableObject {
     /// (matching the old `let command` behavior exactly, for existing
     /// tests); the `settingsStore:` init seeds it with a provider that reads
     /// the store live.
-    private let commandProvider: () -> (mode: SessionMode, command: ResolvedCommand)
+    private var commandProvider: () -> (mode: SessionMode, command: ResolvedCommand)
     private let factory: TerminalSurfaceFactory
     /// Marshals exit callbacks (main queue in production, identity in tests).
     private let hop: (@escaping () -> Void) -> Void
@@ -45,6 +45,17 @@ public final class TerminalSession: ObservableObject {
     public var currentView: NSView? { surface?.view }
     public var currentFocusView: NSView? { surface?.focusView }
     public var currentDirectory: String? { surface?.currentDirectory }
+
+    /// When a running shell exits cleanly, respawn (last-tile crossfade
+    /// behavior) if this returns true, otherwise go idle and fire `onExit`
+    /// so an owner (the grid) can tear the tile down. Default: always
+    /// respawn — matches single-session v1.2 behavior.
+    public var autoRespawnsOnExit: () -> Bool = { true }
+
+    /// Fired (on the hop queue) when a running shell exits and
+    /// `autoRespawnsOnExit()` returned false — i.e. the owner should remove
+    /// this tile. Never fired on the rapid-exit → .failed path.
+    public var onExit: (() -> Void)?
 
     public init(factory: TerminalSurfaceFactory,
                 resolved: (mode: SessionMode, command: ResolvedCommand) = SessionCommand.resolve(),
@@ -72,6 +83,25 @@ public final class TerminalSession: ObservableObject {
         self.command = initial.command
         self.now = now
         self.hop = hop
+    }
+
+    /// Per-tile settings-aware init: resolves with a tile index so tmux
+    /// tiles get distinct session names.
+    public convenience init(factory: TerminalSurfaceFactory,
+                            settingsStore: SettingsStore,
+                            tileIndex: Int,
+                            now: @escaping () -> Date = Date.init,
+                            hop: @escaping (@escaping () -> Void) -> Void = { work in DispatchQueue.main.async(execute: work) }) {
+        self.init(factory: factory,
+                  resolved: SessionCommand.resolve(settings: settingsStore.settings, tileIndex: tileIndex),
+                  now: now, hop: hop)
+        // Re-resolve per spawn so shell-mode changes still apply on respawn,
+        // preserving the tile index.
+        self.overrideProvider { SessionCommand.resolve(settings: settingsStore.settings, tileIndex: tileIndex) }
+    }
+
+    private func overrideProvider(_ provider: @escaping () -> (mode: SessionMode, command: ResolvedCommand)) {
+        commandProvider = provider
     }
 
     public func startIfNeeded() {
@@ -142,6 +172,12 @@ public final class TerminalSession: ObservableObject {
         } else {
             rapidExitCount = 0
         }
-        spawn()
+
+        if autoRespawnsOnExit() {
+            spawn()
+        } else {
+            state = .idle
+            onExit?()
+        }
     }
 }

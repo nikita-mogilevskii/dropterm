@@ -154,4 +154,46 @@ struct TerminalSessionTests {
         f.exitHandlers[2](127)          // one rapid exit after retry -> respawn, not instant fail
         #expect(f.spawnCount == 4)
     }
+
+    @Test func cleanExitClosesTileWhenAutoRespawnDisabled() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        var closed = false
+        s.autoRespawnsOnExit = { false }
+        s.onExit = { closed = true }
+        s.startIfNeeded()
+        f.exitHandlers[0](0)
+        #expect(closed == true)
+        #expect(s.state == .idle)
+        #expect(f.spawnCount == 1)          // did NOT respawn
+    }
+
+    @Test func cleanExitRespawnsWhenAutoRespawnEnabled() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.autoRespawnsOnExit = { true }     // default, explicit for clarity
+        s.startIfNeeded()
+        f.exitHandlers[0](0)
+        #expect(s.state == .running)
+        #expect(f.spawnCount == 2)
+    }
+
+    @Test func rapidExitsParkInFailedEvenWhenCloseDisabled() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.autoRespawnsOnExit = { false }
+        var closed = false
+        s.onExit = { closed = true }
+        s.startIfNeeded()
+        f.exitHandlers[0](127)          // rapid #1 -> close path -> onExit + idle
+        // The close branch WINS here: the rapid-exit guard only parks on the
+        // SECOND consecutive rapid exit (rapidExitLimit == 2). On exit #1
+        // rapidExitCount is 1 (< 2), so it does NOT park; it falls through to
+        // the close branch (autoRespawnsOnExit() == false) -> .idle + onExit.
+        // A closing tile therefore tears down on the first exit and never
+        // reaches the rapid-exit park (there is no second exit to trigger it).
+        #expect(closed == true)
+        #expect(s.state == .idle)
+        #expect(f.spawnCount == 1)
+    }
 }

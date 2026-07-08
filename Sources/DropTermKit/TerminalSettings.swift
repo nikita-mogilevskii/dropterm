@@ -20,8 +20,34 @@ public struct TerminalSettings: Codable, Equatable {
     public var backgroundColorHex: String = "#000000"
     public var backgroundOpacity: CGFloat = 1.0
     public var backgroundImagePath: String? = nil
+    public enum BackdropStyle: String, Codable, Equatable {
+        case color, image, glass
+    }
+    public var backdropStyle: BackdropStyle = .color
+    public var dimInactive: Bool = true
 
     public init() {}
+
+    /// Schema-tolerant decode: merge present keys onto defaults so a blob
+    /// written by an older build (missing keys added in a later version)
+    /// decodes to defaults for those keys instead of throwing keyNotFound.
+    /// Without this, adding a non-Optional field would make JSONDecoder throw
+    /// on every pre-existing "settings.v1" blob, SettingsStore's `try?` would
+    /// treat it as corrupt, and persist() would silently wipe the user's
+    /// saved shell/font/background. Encodable stays synthesized.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let v = try c.decodeIfPresent(ShellMode.self, forKey: .shellMode) { shellMode = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .fontName) { fontName = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .fontFilePath) { fontFilePath = v }
+        if let v = try c.decodeIfPresent(CGFloat.self, forKey: .fontSize) { fontSize = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) { backgroundColorHex = v }
+        if let v = try c.decodeIfPresent(CGFloat.self, forKey: .backgroundOpacity) { backgroundOpacity = v }
+        if let v = try c.decodeIfPresent(String.self, forKey: .backgroundImagePath) { backgroundImagePath = v }
+        if let v = try c.decodeIfPresent(BackdropStyle.self, forKey: .backdropStyle) { backdropStyle = v }
+        if let v = try c.decodeIfPresent(Bool.self, forKey: .dimInactive) { dimInactive = v }
+    }
 
     public static let minFontSize: CGFloat = 8
     public static let maxFontSize: CGFloat = 28

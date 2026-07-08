@@ -47,4 +47,23 @@ struct SessionCommandTests {
                                        shell: "/bin/zsh")
         #expect(r.mode == .tmux(path: "/usr/bin/tmux"))
     }
+
+    @Test func perTileTmuxSessionNames() {
+        #expect(SessionCommand.tmuxSessionName(forTile: 0) == "dropterm")
+        #expect(SessionCommand.tmuxSessionName(forTile: 1) == "dropterm-2")
+        #expect(SessionCommand.tmuxSessionName(forTile: 3) == "dropterm-4")
+    }
+
+    @Test func tileAwareResolveUsesPerTileSessionInTmuxMode() {
+        let r = SessionCommand.resolve(settings: TerminalSettings(), tileIndex: 2,
+                                       fileExists: { $0 == "/usr/bin/tmux" }, shell: "/bin/zsh")
+        #expect(r.command == ResolvedCommand(exec: "/usr/bin/tmux",
+                                             args: ["new-session", "-A", "-s", "dropterm-3"]))
+    }
+
+    @Test func tileAwareResolveCustomShellIgnoresTile() {
+        var s = TerminalSettings(); s.shellMode = .custom(path: "/bin/dash")
+        let r = SessionCommand.resolve(settings: s, tileIndex: 2, fileExists: { _ in true })
+        #expect(r.command == ResolvedCommand(exec: "/bin/dash", args: []))
+    }
 }

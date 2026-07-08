@@ -65,4 +65,34 @@ struct TerminalSettingsTests {
         store.bumpFontSize(1)
         #expect(store.settings.fontSize == 9)
     }
+
+    @Test func newFieldsDefaultAndRoundTrip() {
+        let d = freshDefaults()
+        #expect(SettingsStore(defaults: d).settings.backdropStyle == .color)
+        #expect(SettingsStore(defaults: d).settings.dimInactive == true)
+        let a = SettingsStore(defaults: d)
+        var s = a.settings
+        s.backdropStyle = .glass
+        s.dimInactive = false
+        a.settings = s
+        #expect(SettingsStore(defaults: d).settings.backdropStyle == .glass)
+        #expect(SettingsStore(defaults: d).settings.dimInactive == false)
+    }
+
+    @Test func oldSchemaBlobMissingNewKeysPreservesExistingSettings() {
+        let d = freshDefaults()
+        // Simulate a pre-Task-13 blob: valid settings JSON WITHOUT the new keys.
+        let json = """
+        {"shellMode":{"custom":{"path":"/opt/homebrew/bin/fish"}},"fontName":"Menlo","fontSize":17,"backgroundColorHex":"#112233","backgroundOpacity":0.8}
+        """
+        d.set(Data(json.utf8), forKey: "settings.v1")
+        let s = SettingsStore(defaults: d).settings
+        #expect(s.shellMode == .custom(path: "/opt/homebrew/bin/fish"))
+        #expect(s.fontName == "Menlo")
+        #expect(s.fontSize == 17)
+        #expect(s.backgroundColorHex == "#112233")
+        #expect(s.backgroundOpacity == 0.8)
+        #expect(s.backdropStyle == .color)   // new key absent -> default, not a wipe
+        #expect(s.dimInactive == true)       // new key absent -> default
+    }
 }
