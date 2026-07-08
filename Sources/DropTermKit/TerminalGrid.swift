@@ -59,22 +59,28 @@ public final class TerminalGrid: ObservableObject {
 
     public func focusPrev() {
         guard !tiles.isEmpty else { return }
-        focusIndex = (focusIndex - 1 + tiles.count) % tiles.count
+        let target = (focusIndex - 1 + tiles.count) % tiles.count
+        guard target != focusIndex else { return }
+        focusIndex = target
     }
 
     public func focusNext() {
         guard !tiles.isEmpty else { return }
-        focusIndex = (focusIndex + 1) % tiles.count
+        let target = (focusIndex + 1) % tiles.count
+        guard target != focusIndex else { return }
+        focusIndex = target
     }
 
     public func focus(slot: Int) {
-        if let idx = tiles.firstIndex(where: { $0.id == slot }) { focusIndex = idx }
+        guard let idx = tiles.firstIndex(where: { $0.id == slot }), idx != focusIndex else { return }
+        focusIndex = idx
     }
 
     /// Move focus to whichever tile hosts `session` — the sync target for
     /// "focus follows first responder" (TerminalSession.onFocusRequested).
     public func focus(session: TerminalSession) {
-        if let idx = tiles.firstIndex(where: { $0.session === session }) { focusIndex = idx }
+        guard let idx = tiles.firstIndex(where: { $0.session === session }), idx != focusIndex else { return }
+        focusIndex = idx
     }
 
     private func wire(_ session: TerminalSession) {

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Testing
 @testable import DropTermKit
 
@@ -108,5 +109,21 @@ struct TerminalGridTests {
         let slot0Session = g.tiles[0].session
         slot0Session.onFocusRequested?()         // simulate its surface becoming first responder
         #expect(g.focusIndex == 0)
+    }
+
+    /// Regression for the first-responder re-render loop: TerminalHostView's
+    /// updateNSView -> makeFirstResponder -> KeyablePanel override ->
+    /// onFirstResponderChange -> onFocusRequested -> focus(session:) keeps
+    /// reassigning focusIndex to the value it already holds. Every focusIndex
+    /// mutator must guard against re-publishing when the target is unchanged.
+    @Test func refocusingCurrentTileDoesNotRepublish() {
+        let g = grid()
+        g.addTile()                          // 2 tiles, focus at 1
+        var emissions = 0
+        let c = g.objectWillChange.sink { _ in emissions += 1 }
+        g.focus(slot: g.tiles[1].id)         // already focused -> must be a no-op
+        g.focusNext(); g.focusNext()         // 1->0->1 : two real changes
+        c.cancel()
+        #expect(emissions == 2)              // not 3+; the redundant refocus emitted nothing
     }
 }

@@ -43,6 +43,7 @@ struct TerminalHostView: NSViewRepresentable {
         // key focus must go to the surface's actual interactive view
         // (focusView), not whatever wraps it.
         let focusTarget = session.currentFocusView ?? terminal
+        guard focusTarget.window?.firstResponder !== focusTarget else { return }
         DispatchQueue.main.async {
             focusTarget.window?.makeFirstResponder(focusTarget)
         }
