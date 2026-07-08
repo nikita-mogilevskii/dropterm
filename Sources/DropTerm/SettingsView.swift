@@ -19,9 +19,10 @@ struct SettingsView: View {
             fontSection
             shellSection
             backgroundSection
+            terminalsSection
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 380)
+        .frame(width: 420, height: 460)
     }
 
     // MARK: Font
@@ -153,25 +154,39 @@ struct SettingsView: View {
 
     // MARK: Background
 
+    /// Style picker gates the rest of the section (amendment 20): color well
+    /// + opacity apply to .color and .image alike (the image is composited
+    /// under the opacity), the image row only to .image, and .glass hides
+    /// both — Liquid Glass blurs what's behind the panel and manages its
+    /// own translucency.
     private var backgroundSection: some View {
         Section("Background") {
-            ColorPicker("Color", selection: backgroundColor, supportsOpacity: false)
-            HStack {
-                Text("Opacity")
-                Slider(value: $store.settings.backgroundOpacity, in: 0.1...1.0)
-                Text("\(Int((store.settings.backgroundOpacity * 100).rounded()))%")
-                    .monospacedDigit()
-                    .frame(width: 44, alignment: .trailing)
+            Picker("Style", selection: $store.settings.backdropStyle) {
+                Text("Color").tag(TerminalSettings.BackdropStyle.color)
+                Text("Image").tag(TerminalSettings.BackdropStyle.image)
+                Text("Liquid Glass").tag(TerminalSettings.BackdropStyle.glass)
             }
-            HStack {
-                Text(store.settings.backgroundImagePath ?? "No image")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Choose…") { chooseBackgroundImage() }
-                Button("Clear") { store.settings.backgroundImagePath = nil }
-                    .disabled(store.settings.backgroundImagePath == nil)
+            if store.settings.backdropStyle != .glass {
+                ColorPicker("Color", selection: backgroundColor, supportsOpacity: false)
+                HStack {
+                    Text("Opacity")
+                    Slider(value: $store.settings.backgroundOpacity, in: 0.1...1.0)
+                    Text("\(Int((store.settings.backgroundOpacity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .frame(width: 44, alignment: .trailing)
+                }
+            }
+            if store.settings.backdropStyle == .image {
+                HStack {
+                    Text(store.settings.backgroundImagePath ?? "No image")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Choose…") { chooseBackgroundImage() }
+                    Button("Clear") { store.settings.backgroundImagePath = nil }
+                        .disabled(store.settings.backgroundImagePath == nil)
+                }
             }
         }
     }
@@ -189,5 +204,13 @@ struct SettingsView: View {
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         store.settings.backgroundImagePath = url.path
+    }
+
+    // MARK: Terminals
+
+    private var terminalsSection: some View {
+        Section("Terminals") {
+            Toggle("Dim inactive terminals", isOn: $store.settings.dimInactive)
+        }
     }
 }

@@ -2,49 +2,42 @@ import SwiftUI
 import DropTermKit
 
 struct PanelView: View {
-    @EnvironmentObject private var session: TerminalSession
-    @EnvironmentObject private var sizeStore: PanelSizeStore
+    @EnvironmentObject private var grid: TerminalGrid
     @EnvironmentObject private var settingsStore: SettingsStore
 
     var body: some View {
-        terminalCard
+        TileGridView()
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .bottomTrailing) { ResizeHandle() }
-            .onAppear { session.startIfNeeded() }
+            .background(backdrop)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .onAppear { grid.startAll() }
     }
 
-    /// Rounded terminal card. The inner 8pt padding keeps glyphs clear of
-    /// the corner radius (they clipped in v1). Crossfade keyed on
-    /// generation: old terminal fades out, fresh one fades in on respawn.
-    /// Backdrop (color/image/opacity) styles the whole card as one visual
-    /// surface (spec amendment 15) — the terminal view itself is always
-    /// fully transparent, so at <100% opacity the desktop shows through the
-    /// entire card while glyphs stay crisp.
-    private var terminalCard: some View {
-        ZStack {
-            TerminalHostView()
-                .id(session.generation)
-                .transition(.opacity)
-                .padding(8)
-
-            if case .failed(let message) = session.state {
-                FailedOverlay(message: message)
-            }
+    /// Whole-card backdrop (spec amendments 15/20): color/image style the
+    /// card as a flat composited surface at the chosen opacity; glass is
+    /// macOS 26 Liquid Glass — a real blur of whatever sits behind the
+    /// panel, so it manages its own translucency and ignores the opacity
+    /// slider entirely.
+    @ViewBuilder
+    private var backdrop: some View {
+        switch settingsStore.settings.backdropStyle {
+        case .glass:
+            Rectangle().fill(.clear).glassEffect(in: .rect(cornerRadius: 14))
+        case .image, .color:
+            imageOrColorBackdrop
         }
-        .animation(.easeInOut(duration: 0.35), value: session.generation)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(backdrop)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     /// Image (aspect-fill, clipped so it never distorts the card's layout)
-    /// when set, else the flat color; opacity applies to this whole layer
-    /// so it reads as one composited surface with the terminal on top.
+    /// when in .image style and a path is set and readable, else the flat
+    /// color; opacity applies to this whole layer so it reads as one
+    /// composited surface with the terminals on top.
     @ViewBuilder
-    private var backdrop: some View {
+    private var imageOrColorBackdrop: some View {
         Group {
-            if let path = settingsStore.settings.backgroundImagePath,
+            if settingsStore.settings.backdropStyle == .image,
+               let path = settingsStore.settings.backgroundImagePath,
                let image = NSImage(contentsOfFile: path) {
                 Image(nsImage: image)
                     .resizable()
@@ -59,8 +52,91 @@ struct PanelView: View {
     }
 }
 
-struct FailedOverlay: View {
-    @EnvironmentObject private var session: TerminalSession
+/// Lays out `grid.tiles` in the even split (spec amendment 17): 1 tile
+/// fills the card, 2/3 split into equal columns, 4 form a 2x2 grid.
+/// Animates tile insert/remove and focus changes; dims inactive tiles
+/// when the setting is on (amendment 19).
+struct TileGridView: View {
+    @EnvironmentObject private var grid: TerminalGrid
+    @EnvironmentObject private var settingsStore: SettingsStore
+
+    var body: some View {
+        layout
+            .animation(.easeInOut(duration: 0.3), value: grid.tiles.count)
+            .animation(.easeInOut(duration: 0.2), value: grid.focusIndex)
+    }
+
+    @ViewBuilder
+    private var layout: some View {
+        let tiles = grid.tiles
+        switch tiles.count {
+        case 1:
+            tileCell(tiles[0], index: 0)
+        case 2:
+            HStack(spacing: 8) {
+                tileCell(tiles[0], index: 0)
+                tileCell(tiles[1], index: 1)
+            }
+        case 3:
+            HStack(spacing: 8) {
+                tileCell(tiles[0], index: 0)
+                tileCell(tiles[1], index: 1)
+                tileCell(tiles[2], index: 2)
+            }
+        default:
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    tileCell(tiles[0], index: 0)
+                    tileCell(tiles[1], index: 1)
+                }
+                HStack(spacing: 8) {
+                    tileCell(tiles[2], index: 2)
+                    tileCell(tiles[3], index: 3)
+                }
+            }
+        }
+    }
+
+    private func tileCell(_ tile: TerminalGrid.Tile, index: Int) -> some View {
+        let isFocused = index == grid.focusIndex
+        let dim = settingsStore.settings.dimInactive && !isFocused
+        return TileView(session: tile.session, isFocused: isFocused)
+            .opacity(dim ? 0.55 : 1.0)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(isFocused ? Color.white.opacity(0.25) : .clear, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+            .id(tile.id)          // STABLE slot id -> correct enter/leave animation
+            .onTapGesture { grid.focus(slot: tile.id) }
+    }
+}
+
+/// Hosts one tile's terminal (the old terminalCard inner content, per-tile
+/// now): the crossfade on respawn plus that session's `.failed` overlay.
+struct TileView: View {
+    @ObservedObject var session: TerminalSession
+    let isFocused: Bool
+
+    var body: some View {
+        ZStack {
+            TerminalHostView(session: session, isFocused: isFocused)
+                .id(session.generation)
+                .transition(.opacity)
+                .padding(6)
+            if case .failed(let message) = session.state {
+                TileFailedOverlay(session: session, message: message)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: session.generation)
+        .background(Color.black.opacity(0.001))  // hit area for tap-to-focus
+    }
+}
+
+struct TileFailedOverlay: View {
+    let session: TerminalSession
     let message: String
 
     var body: some View {
@@ -77,33 +153,5 @@ struct FailedOverlay: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black.opacity(0.65))
-    }
-}
-
-/// Invisible bottom-right drag region (18pt). Resize deltas come from
-/// NSEvent.mouseLocation (SCREEN coordinates) captured at drag start —
-/// SwiftUI gesture translation breaks when macOS shifts the panel away
-/// from a screen edge mid-drag (v1 bug: size inverted/exploded at the
-/// right screen edge). AppKit y-origin is bottom-left, so height delta
-/// is flipped. The panel's horizontal center is pinned (Spotlight-style
-/// positioning), so width tracks 2x the horizontal mouse delta.
-struct ResizeHandle: View {
-    @EnvironmentObject private var sizeStore: PanelSizeStore
-    @State private var dragStart: (mouseX: CGFloat, width: CGFloat)?
-
-    var body: some View {
-        Color.clear
-            .frame(width: 18, height: 18)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        let mouseX = NSEvent.mouseLocation.x
-                        let start = dragStart ?? (mouseX, sizeStore.width)
-                        if dragStart == nil { dragStart = start }
-                        sizeStore.set(width: ResizeMath.widthResized(startWidth: start.width, mouseStartX: start.mouseX, mouseNowX: NSEvent.mouseLocation.x))
-                    }
-                    .onEnded { _ in dragStart = nil }
-            )
     }
 }

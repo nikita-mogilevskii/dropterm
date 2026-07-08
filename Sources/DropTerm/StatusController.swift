@@ -8,19 +8,34 @@ final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+/// Fixed Spotlight-style geometry (v1.3 amendment 16 supersedes the old
+/// width-resizable panel): width 700, horizontally centered, top edge at
+/// 75% of the visible height, height fixed at half the visible height.
+/// This is the only surviving payload of the deleted resize-geometry and
+/// panel-width-store pair — reintroduced here since nothing else needs it.
+private enum PanelGeometry {
+    static let width: CGFloat = 700
+    static let heightFraction: CGFloat = 0.5
+    static let topFraction: CGFloat = 0.75
+
+    static func frame(screenFrame: CGRect) -> CGRect {
+        let height = screenFrame.height * heightFraction
+        let top = screenFrame.minY + screenFrame.height * topFraction
+        return CGRect(x: screenFrame.midX - width / 2, y: top - height, width: width, height: height)
+    }
+}
+
 final class StatusController: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: KeyablePanel!
     private var hotKey: HotKey?
     private var clickOutsideMonitor: Any?
     private var keyMonitor: Any?
-    private var sizeObservation: AnyCancellable?
     private var settingsObservation: AnyCancellable?
     private var settingsWindow: NSWindow?
 
     private let settingsStore: SettingsStore
-    private let session: TerminalSession
-    private let sizeStore = PanelSizeStore()
+    private let grid: TerminalGrid
 
     override init() {
         // Session and factory hang off the same store: the factory reads
@@ -28,8 +43,10 @@ final class StatusController: NSObject, NSApplicationDelegate {
         // shell command from it on every respawn.
         let store = SettingsStore()
         settingsStore = store
-        session = TerminalSession(factory: SwiftTermSurfaceFactory(settingsStore: store),
-                                  settingsStore: store)
+        let factory = SwiftTermSurfaceFactory(settingsStore: store)
+        grid = TerminalGrid(makeSession: { slot in
+            TerminalSession(factory: factory, settingsStore: store, tileIndex: slot)
+        })
         super.init()
     }
 
@@ -45,12 +62,14 @@ final class StatusController: NSObject, NSApplicationDelegate {
         buildPanel()
         hotKey = HotKey { [weak self] in self?.togglePanel() }
 
-        // Live-apply font/background edits to the running surface. Shell
-        // mode is deliberately NOT applied live — it takes effect on the
-        // next respawn (the session re-resolves via its commandProvider).
+        // Live-apply font/background edits to every tile's running surface.
+        // Shell mode is deliberately NOT applied live — it takes effect on
+        // the next respawn (each session re-resolves via its commandProvider).
         settingsObservation = settingsStore.$settings
             .removeDuplicates()
-            .sink { [weak self] in self?.session.applySettings($0) }
+            .sink { [weak self] settings in
+                self?.grid.tiles.forEach { $0.session.applySettings(settings) }
+            }
     }
 
     // MARK: Clicks
@@ -94,7 +113,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
     /// (isReleasedWhenClosed = false), reopening brings the same one back.
     @objc private func openSettingsWindow() {
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 460),
                                   styleMask: [.titled, .closable],
                                   backing: .buffered, defer: false)
             window.title = "DropTerm Settings"
@@ -128,8 +147,8 @@ final class StatusController: NSObject, NSApplicationDelegate {
     // MARK: Panel
 
     private func buildPanel() {
-        let initialFrame = ResizeMath.spotlightFrame(width: sizeStore.width,
-                                                      screenFrame: NSScreen.main?.visibleFrame ?? .init(x: 0, y: 0, width: 1440, height: 900))
+        let initialFrame = PanelGeometry.frame(
+            screenFrame: NSScreen.main?.visibleFrame ?? .init(x: 0, y: 0, width: 1440, height: 900))
         panel = KeyablePanel(contentRect: initialFrame,
                              styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: true)
@@ -144,22 +163,8 @@ final class StatusController: NSObject, NSApplicationDelegate {
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView:
             PanelView()
-                .environmentObject(session)
-                .environmentObject(sizeStore)
+                .environmentObject(grid)
                 .environmentObject(settingsStore))
-
-        // Panel frame follows the size store (resize handle writes there);
-        // re-derive the Spotlight-style frame so resizing stays centered.
-        sizeObservation = sizeStore.$width.sink { [weak self] newWidth in
-            self?.applyPanelWidth(newWidth)
-        }
-    }
-
-    private func applyPanelWidth(_ width: CGFloat) {
-        guard let panel else { return }
-        let screen = panel.screen ?? NSScreen.main
-        guard let screen else { return }
-        panel.setFrame(ResizeMath.spotlightFrame(width: width, screenFrame: screen.visibleFrame), display: true)
     }
 
     private func togglePanel() {
@@ -170,7 +175,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
         positionSpotlightStyle()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        session.startIfNeeded()
+        grid.startAll()
         installClickOutsideMonitor()
         installKeyMonitor()
     }
@@ -189,8 +194,7 @@ final class StatusController: NSObject, NSApplicationDelegate {
     private func positionSpotlightStyle() {
         let screen = statusItem.button?.window?.screen ?? NSScreen.main
         guard let screen else { return }
-        panel.setFrame(ResizeMath.spotlightFrame(width: sizeStore.width, screenFrame: screen.visibleFrame),
-                       display: true)
+        panel.setFrame(PanelGeometry.frame(screenFrame: screen.visibleFrame), display: true)
     }
 
     private func installClickOutsideMonitor() {
@@ -230,25 +234,43 @@ final class StatusController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Ctrl+W quit, Ctrl+= / Ctrl++ / Ctrl+- font size. Swallowed events
+    /// Cmd+Left/Right move focus between tiles; Ctrl+D opens a new tile;
+    /// Ctrl+W closes the focused tile (quitting only when it was the last
+    /// one); Ctrl+= / Ctrl++ / Ctrl+- still bump font size. Swallowed events
     /// return nil so the terminal never sees them; everything else passes
     /// through untouched (the shell owns all other Ctrl chords).
     ///
     /// Modifiers are matched EXACTLY (not just "contains .control") so a
     /// chord like Ctrl+Cmd+W — which still `.contains(.control)` — passes
-    /// through instead of quitting the app. Shift is allowed in addition
-    /// to Control only for the "+" case, since Ctrl+Shift+= is how a US
+    /// through instead of closing a tile. Shift is allowed in addition to
+    /// Control only for the "+" case, since Ctrl+Shift+= is how a US
     /// keyboard actually types Ctrl++ (Shift is what turns "=" into "+").
+    /// Arrow keys are matched by keyCode (123/124), not
+    /// charactersIgnoringModifiers, which is unreliable for them.
     private func handlePanelKeyDown(_ event: NSEvent) -> NSEvent? {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let isPlainControl = flags == .control
         let isControlShift = flags == [.control, .shift]
+        let isPlainCommand = flags == .command
+
+        // Cmd+Left / Cmd+Right — move focus between tiles.
+        if isPlainCommand {
+            switch event.keyCode {
+            case 123: grid.focusPrev(); return nil   // Left arrow
+            case 124: grid.focusNext(); return nil   // Right arrow
+            default: return event
+            }
+        }
+
         guard isPlainControl || isControlShift else {
             return event
         }
         switch event.charactersIgnoringModifiers {
+        case "d" where isPlainControl:
+            grid.addTile()               // new tile (no-op at 4); never reaches shell
+            return nil
         case "w" where isPlainControl:
-            NSApp.terminate(nil)
+            if !grid.closeFocusedTile() { NSApp.terminate(nil) }  // false = was last tile
             return nil
         case "=", "+":
             settingsStore.bumpFontSize(1)
