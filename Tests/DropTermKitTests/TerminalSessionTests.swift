@@ -104,6 +104,24 @@ struct TerminalSessionTests {
         #expect(s.currentView === f.surfaces[1].view)
     }
 
+    @Test func terminateSuppressesSubsequentExitCallback() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        var respawned = false
+        var closed = false
+        s.autoRespawnsOnExit = { respawned = true; return true }
+        s.onExit = { closed = true }
+        s.startIfNeeded()
+        #expect(f.spawnCount == 1)
+        s.terminate()                       // deliberate close: state -> .idle first
+        #expect(s.state == .idle)
+        f.exitHandlers[0](0)                // the SIGTERM's processTerminated arrives now
+        // guard (state == .running) short-circuits handleExit:
+        #expect(f.spawnCount == 1)          // no respawn
+        #expect(respawned == false)         // autoRespawnsOnExit never consulted
+        #expect(closed == false)            // onExit never fired
+    }
+
     @Test func staleExitFromReplacedSurfaceIsIgnored() {
         let f = FakeFactory()
         let s = makeSession(f)
