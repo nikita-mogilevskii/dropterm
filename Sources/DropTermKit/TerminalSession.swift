@@ -130,6 +130,16 @@ public final class TerminalSession: ObservableObject {
         surface?.apply(settings: settings)
     }
 
+    /// Stop this session's process and release its surface, for tile close.
+    /// Sets .idle FIRST so the resulting processTerminated callback is
+    /// guarded out (handleExit only acts while .running) — closing a tile
+    /// must never fire onExit or respawn.
+    public func terminate() {
+        state = .idle
+        surface?.terminateProcess()
+        surface = nil
+    }
+
     private func spawn() {
         let resolved = commandProvider()
         mode = resolved.mode
