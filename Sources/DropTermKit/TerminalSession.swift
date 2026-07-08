@@ -57,6 +57,12 @@ public final class TerminalSession: ObservableObject {
     /// this tile. Never fired on the rapid-exit → .failed path.
     public var onExit: (() -> Void)?
 
+    /// Fired when THIS session's surface becomes AppKit's first responder —
+    /// see `noteFirstResponderChange`. The owner (TerminalGrid) wires this to
+    /// move `focusIndex` here, so focus follows first responder instead of
+    /// only following clicks the SwiftUI layer actually sees.
+    public var onFocusRequested: (() -> Void)?
+
     public init(factory: TerminalSurfaceFactory,
                 resolved: (mode: SessionMode, command: ResolvedCommand) = SessionCommand.resolve(),
                 now: @escaping () -> Date = Date.init,
@@ -128,6 +134,21 @@ public final class TerminalSession: ObservableObject {
     /// is currently running. No-op if no session has spawned yet.
     public func applySettings(_ settings: TerminalSettings) {
         surface?.apply(settings: settings)
+    }
+
+    /// Called by the app shell whenever AppKit's first responder changes
+    /// anywhere in the panel (there is no per-view "did become first
+    /// responder" notification, so the shell observes this once at the
+    /// window level and fans it out to every session). A click straight into
+    /// SwiftTerm's terminal content — not just the tile's padding — makes
+    /// the surface's view first responder as part of AppKit's own mouseDown
+    /// handling, before SwiftUI's onTapGesture on the tile wrapper ever runs;
+    /// this is how the grid's focusIndex learns about that without SwiftTerm
+    /// needing to know anything about tiles or the grid. No-ops when the new
+    /// responder isn't this session's own surface.
+    public func noteFirstResponderChange(_ responder: NSResponder?) {
+        guard let responder, responder === currentFocusView else { return }
+        onFocusRequested?()
     }
 
     /// Stop this session's process and release its surface, for tile close.

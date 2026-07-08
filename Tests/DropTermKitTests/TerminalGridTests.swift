@@ -94,4 +94,19 @@ struct TerminalGridTests {
         #expect(g.tiles.count == 1)
         #expect(g.tiles.map(\.id) == [0])
     }
+
+    /// Clicking a tile's terminal CONTENT never reaches the SwiftUI
+    /// .onTapGesture on the tile wrapper (SwiftTerm's AppKit view consumes
+    /// the mouseDown first) — focus must instead follow wherever first
+    /// responder actually lands. TerminalGrid.wire() connects each session's
+    /// onFocusRequested straight to focus(session:); this exercises that
+    /// wiring without any real AppKit event.
+    @Test func focusFollowsSessionRequest() {
+        let g = grid()
+        g.addTile(); g.addTile()                 // 3 tiles, focus currently at index 2
+        #expect(g.focusIndex == 2)
+        let slot0Session = g.tiles[0].session
+        slot0Session.onFocusRequested?()         // simulate its surface becoming first responder
+        #expect(g.focusIndex == 0)
+    }
 }

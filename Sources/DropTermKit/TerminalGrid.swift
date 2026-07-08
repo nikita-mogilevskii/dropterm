@@ -71,12 +71,22 @@ public final class TerminalGrid: ObservableObject {
         if let idx = tiles.firstIndex(where: { $0.id == slot }) { focusIndex = idx }
     }
 
+    /// Move focus to whichever tile hosts `session` — the sync target for
+    /// "focus follows first responder" (TerminalSession.onFocusRequested).
+    public func focus(session: TerminalSession) {
+        if let idx = tiles.firstIndex(where: { $0.session === session }) { focusIndex = idx }
+    }
+
     private func wire(_ session: TerminalSession) {
         session.autoRespawnsOnExit = { [weak self] in (self?.tiles.count ?? 1) == 1 }
         session.onExit = { [weak self, weak session] in
             guard let self, let session,
                   let idx = self.tiles.firstIndex(where: { $0.session === session }) else { return }
             self.removeTile(at: idx)
+        }
+        session.onFocusRequested = { [weak self, weak session] in
+            guard let self, let session else { return }
+            self.focus(session: session)
         }
     }
 

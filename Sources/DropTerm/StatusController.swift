@@ -6,6 +6,25 @@ import DropTermKit
 /// Borderless panels refuse key status by default; the terminal needs it.
 final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// Fired on every ACCEPTED first-responder change in this panel.
+    /// NSResponder.becomeFirstResponder() is never meant to be called
+    /// directly to effect a real focus change — AppKit funnels every such
+    /// change through NSWindow.makeFirstResponder(_:), which is exactly why
+    /// overriding it here catches both a direct click into a tile's terminal
+    /// content (SwiftTerm grabs first responder as part of its own mouseDown
+    /// handling, before SwiftUI's onTapGesture on the tile wrapper ever
+    /// runs) and TerminalHostView's programmatic focus calls, with no
+    /// SwiftTerm subclassing required.
+    var onFirstResponderChange: ((NSResponder) -> Void)?
+
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        let accepted = super.makeFirstResponder(responder)
+        if accepted, let responder {
+            onFirstResponderChange?(responder)
+        }
+        return accepted
+    }
 }
 
 /// Fixed Spotlight-style geometry (v1.3 amendment 16 supersedes the old
@@ -165,6 +184,12 @@ final class StatusController: NSObject, NSApplicationDelegate {
             PanelView()
                 .environmentObject(grid)
                 .environmentObject(settingsStore))
+        // Focus follows first responder (v1.3 UI review fix): whichever
+        // tile's terminal content actually has keyboard focus is the tile
+        // grid.focusIndex must point at, regardless of how it got there.
+        panel.onFirstResponderChange = { [weak self] responder in
+            self?.grid.tiles.forEach { $0.session.noteFirstResponderChange(responder) }
+        }
     }
 
     private func togglePanel() {

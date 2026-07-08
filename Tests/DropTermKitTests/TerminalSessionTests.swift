@@ -196,6 +196,23 @@ struct TerminalSessionTests {
         #expect(f.spawnCount == 2)
     }
 
+    @Test func noteFirstResponderChangeFiresOnlyForOwnFocusView() {
+        let f = FakeFactory()
+        let s = makeSession(f)
+        s.startIfNeeded()
+        var requested = false
+        s.onFocusRequested = { requested = true }
+
+        s.noteFirstResponderChange(NSView())        // some other view — no-op
+        #expect(requested == false)
+
+        s.noteFirstResponderChange(nil)              // first responder cleared — no-op
+        #expect(requested == false)
+
+        s.noteFirstResponderChange(s.currentFocusView)  // this session's own surface
+        #expect(requested == true)
+    }
+
     @Test func rapidExitsParkInFailedEvenWhenCloseDisabled() {
         let f = FakeFactory()
         let s = makeSession(f)
