@@ -5,8 +5,7 @@ public protocol TerminalSurface: AnyObject {
     var view: NSView { get }
     /// The interactive view that should receive keyboard focus. Defaults to
     /// `view` via the extension below; a surface that wraps its real
-    /// interactive view in a non-key-handling container (e.g. SwiftTermSurface
-    /// sitting a background image behind the terminal) overrides this to
+    /// interactive view in a non-key-handling container overrides this to
     /// point at the actual key-event target, so TerminalHostView never hands
     /// first responder to a plain, non-interactive container view.
     var focusView: NSView { get }
