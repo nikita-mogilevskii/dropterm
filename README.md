@@ -23,20 +23,23 @@ Ctrl+I     Terminal appears   click away     runs in background     Ctrl+I     b
 
 ## Features
 
-- **Persistent session** — tmux-backed when installed (survives even app restarts), plain login shell otherwise
+- **Persistent sessions** — tmux-backed when installed (survive even app restarts), plain login shell otherwise
+- **Multiple terminals** — up to 4 tiles in one panel, evenly split (1 full, 2/3 equal columns, 4 as a 2x2 grid); each tile is its own independent session
 - **Ctrl+I global toggle** — hide/show from anywhere, even fullscreen apps
-- **Exit = reset** — `exit` or Ctrl+D respawns a fresh shell with a subtle crossfade
-- **Spotlight-style fixed position** — appears near the top center, width-only resizable
+- **Exit = tile closes (or resets)** — `exit`/Ctrl+D inside the shell ends that tile; on the last remaining tile it respawns a fresh shell with a subtle crossfade instead
+- **Spotlight-style fixed panel** — fixed 700pt width, horizontally centered, half the screen's height
 - **No Dock icon** — pure menu bar, zero visual clutter
 - **Settings panel**
   - Font: choose from system fonts or load custom `.ttf`/`.otf` files
   - Custom shell command — run zsh, bash, fish, nu, or other interpreters
-  - Background color, opacity, and image support (scaled to fill, aspect-fill)
+  - Background style: Color (with opacity), Image (aspect-fill), or Liquid Glass (macOS 26 real blur)
+  - Dim inactive terminals toggle (default on)
   - Ctrl+± to scale the font on the fly
-- **Ctrl+W to quit** — close the app without losing session state
+- **Ctrl+W to close/quit** — closes the focused tile, or quits the app when it's the last one, without losing other session state
 - **Fast keybinds**
-  - Ctrl+D → respawn shell (inside terminal)
-  - Ctrl+W → quit app
+  - Ctrl+D → add a new terminal tile (up to 4)
+  - Ctrl+W → close focused tile (quits app on the last tile)
+  - Cmd+Left / Cmd+Right → switch focused tile
   - Ctrl+= → increase font size
   - Ctrl+- → decrease font size
   - Ctrl+I → toggle visibility
@@ -81,28 +84,30 @@ swift run DropTermTests
 | Action | Key |
 |---|---|
 | Toggle visibility | **Ctrl+I** |
-| Quit app | **Ctrl+W** |
+| Add terminal tile (up to 4) | **Ctrl+D** |
+| Close focused tile (quits app on the last tile) | **Ctrl+W** |
+| Switch focused tile | **Cmd+Left / Cmd+Right** |
 | Increase font | **Ctrl+= / Ctrl++** |
 | Decrease font | **Ctrl+-** |
-| Respawn shell | **Ctrl+D** (inside terminal) |
 
 ## Settings
 
 All settings live in a simple preferences panel accessible via the menu bar. Changes apply instantly:
 
 - **Fonts:** pick from system fonts or drag in custom `.ttf` or `.otf` files
-- **Background:** choose color (with opacity), or upload an image scaled to fill (aspect-fill)
-- **Exit behaviour:** always respawns fresh
+- **Background:** choose Color (with opacity), Image (scaled to fill, aspect-fill), or Liquid Glass (macOS 26 real blur — color/opacity/image controls are disabled in this mode)
+- **Terminals:** Dim inactive terminals toggle (default on)
+- **Exit behaviour:** a shell exit closes its tile when others remain, or respawns fresh when it's the last one
 
 One setting is not instant:
 
-- **Shell:** set a custom shell command (default: login shell) — applies to the next session (Ctrl+D to respawn now)
+- **Shell:** set a custom shell command (default: login shell) — applies to the next session (Ctrl+D to open a fresh tile now)
 
 State persists in `UserDefaults` (`~/Library/Preferences`).
 
 ## Architecture
 
-`DropTermKit` (session state machine with injectable surface factory, pure tmux/resize resolvers, persisted size store) + thin NSStatusItem-driven borderless key panel (`StatusController`) hosting SwiftUI views over SwiftTerm's terminal emulator. Design docs in `docs/superpowers/`.
+`DropTermKit` (`TerminalGrid` managing 1-4 independent `TerminalSession` tiles, `SessionCommand` resolving each tile's tmux session name, `SettingsStore` for persisted preferences) + thin NSStatusItem-driven borderless key panel (`StatusController`, fixed-geometry `NSPanel`) hosting SwiftUI views over SwiftTerm's terminal emulator. Design docs in `docs/superpowers/`.
 
 ## License
 
