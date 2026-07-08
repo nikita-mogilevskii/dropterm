@@ -102,6 +102,39 @@ Smoke feedback drove these changes:
       entire panel (text stays crisp).
     - Rounded-corner clipping applies to the composite, so backdrop +
       terminal read as one piece.
+## v1.3 amendments (multi-terminal)
+
+16. **Resizing REMOVED entirely** (supersedes 3/9/10 resize clauses):
+    no drag handle, no width persistence — PanelSizeStore and the
+    resize math die. Panel = fixed width 700, Spotlight position and
+    half-screen height unchanged.
+17. **Up to 4 terminal tiles in the panel**, evenly split: 1 = full,
+    2 = equal columns, 3 = equal columns, 4 = 2×2 grid. Each tile is
+    an independent TerminalSession (own pty, own crossfade/rapid-exit
+    lifecycle). tmux mode: tile N attaches session "dropterm" /
+    "dropterm-2" / "dropterm-3" / "dropterm-4" (unique names — shared
+    names would mirror).
+18. **In-panel keys (supersede 11 where they overlap)**:
+    - Ctrl+D → NEW tile (no-op at 4). Never reaches the shell (EOF is
+      gone; end a shell with `exit` or close its tile).
+    - Ctrl+W → close FOCUSED tile when >1 exist; quit DropTerm when
+      it is the last.
+    - Cmd+Left / Cmd+Right → move focus prev/next tile (wraps).
+    - Ctrl+= / Ctrl+- unchanged (font scale, global across tiles).
+    - Shell exit inside a tile: >1 tiles → tile closes; last tile →
+      old respawn-with-crossfade behavior (rapid-exit guard intact).
+19. **Focus + dimming**: exactly one focused tile (key input target,
+    focus follows Cmd+arrows and click). Unfocused tiles dim (reduced
+    opacity ~0.55). Settings gains "Dim inactive terminals" toggle
+    (default on). Tile create/remove/focus-change animate with system
+    SwiftUI animations (insert/remove transition scale+opacity,
+    ~0.3s easeInOut; grid relayout animated).
+20. **Backdrop gains Liquid Glass style**: background style choice —
+    Color / Image / Liquid Glass. Glass = macOS 26 `.glassEffect` on
+    the whole panel card (real blur of what's behind; color/opacity/
+    image controls disabled in that mode). Settings model:
+    backdropStyle (.color | .image | .glass), dimInactive: Bool.
+
 14. **Public release, cadence-style**: app icon (generated, gradient +
     terminal glyph), MIT LICENSE, hero README (icon, badges, install
     with Gatekeeper note, usage table), public GitHub repo
