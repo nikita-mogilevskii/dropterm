@@ -102,10 +102,6 @@ struct TileGridView: View {
         let dim = settingsStore.settings.dimInactive && !isFocused
         return TileView(session: tile.session, isFocused: isFocused)
             .opacity(dim ? 0.55 : 1.0)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(isFocused ? Color.white.opacity(0.25) : .clear, lineWidth: 1)
-            )
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.scale(scale: 0.85).combined(with: .opacity))
